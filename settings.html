@@ -399,6 +399,56 @@
                                     title="When enabled, portraits will be automatically generated in the background for new NPCs created or updated in the lorebook if they don't already have one."></i>
                             </label>
 
+                            <small style="display: block; padding-left: 4px; font-size: 0.78em; opacity: 0.6; margin-top: 10px;">Portrait Prompt Style</small>
+                            <div style="display: flex; align-items: center; gap: 8px; padding-left: 4px;">
+                                <label style="font-size: 0.82em; opacity: 0.75; white-space: nowrap;">Prompt builder
+                                    <i class="fa-solid fa-circle-question interactable"
+                                        title="Prose: the portrait LLM writes a descriptive prompt (best for Flux / Pollinations). Danbooru tags: each character gets a race from the Race Creator plus character-specific body part tags, and the prompt is assembled from tags grouped by part (best for NovelAI and anime SD models). Race and part tags are only used for images and never reach the story."></i>
+                                </label>
+                                <select id="rpg_portrait_prompt_mode" class="text_pole" style="font-size: 0.82em; padding: 2px 4px; height: 24px; flex: 1;">
+                                    <option value="prose">Prose (LLM description)</option>
+                                    <option value="tags">Danbooru tags (races &amp; parts)</option>
+                                </select>
+                            </div>
+                            <div id="rpg_tag_prompt_group" class="flex-container flexFlowColumn gap-1" style="padding-left: 4px; display: none;">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <label style="font-size: 0.82em; opacity: 0.75; white-space: nowrap;">Emphasis syntax
+                                        <i class="fa-solid fa-circle-question interactable"
+                                            title="Tags are stored with NovelAI emphasis ({tag}, N::tag::). NovelAI keeps them as is; Stable Diffusion converts them to (tag) / (tag:N); None strips emphasis."></i>
+                                    </label>
+                                    <select id="rpg_tag_emphasis_style" class="text_pole" style="font-size: 0.82em; padding: 2px 4px; height: 24px; flex: 1;">
+                                        <option value="novelai">NovelAI</option>
+                                        <option value="sd">Stable Diffusion (A1111 / ComfyUI)</option>
+                                        <option value="none">None (strip emphasis)</option>
+                                    </select>
+                                </div>
+                                <label style="font-size: 0.82em; opacity: 0.75;">Tags before every portrait</label>
+                                <input id="rpg_tag_prompt_prefix" type="text" class="text_pole" style="font-size: 0.85em;" placeholder="solo, portrait, upper body" />
+                                <label style="font-size: 0.82em; opacity: 0.75;">Tags after every portrait</label>
+                                <input id="rpg_tag_prompt_suffix" type="text" class="text_pole" style="font-size: 0.85em;" placeholder="best quality, very aesthetic" />
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <label style="font-size: 0.82em; opacity: 0.75; white-space: nowrap;">New races
+                                        <i class="fa-solid fa-circle-question interactable"
+                                            title="When no race in the library fits a character. Ask: the AI drafts a race and you review it before it is saved. Automatic: the AI creates it silently. Never: the character gets no race and only character-specific tags."></i>
+                                    </label>
+                                    <select id="rpg_race_creation_mode" class="text_pole" style="font-size: 0.82em; padding: 2px 4px; height: 24px; flex: 1;">
+                                        <option value="ask">Ask me (review)</option>
+                                        <option value="auto">Create automatically</option>
+                                        <option value="never">Never create</option>
+                                    </select>
+                                </div>
+                                <label class="checkbox_label">
+                                    <input id="rpg_race_review_character_tags" type="checkbox" />
+                                    <span>Review character tags before saving</span>
+                                    <i class="fa-solid fa-circle-question interactable"
+                                        title="Show the AI's character-specific part tags in an editor the first time a character is tagged."></i>
+                                </label>
+                                <div style="display: flex; gap: 4px;">
+                                    <button type="button" id="rpg_open_race_creator" class="menu_button interactable" style="flex: 1; font-size: 0.85em;"><i class="fa-solid fa-dragon"></i> Race Creator</button>
+                                    <button type="button" id="rpg_open_part_creator" class="menu_button interactable" style="flex: 1; font-size: 0.85em;"><i class="fa-solid fa-puzzle-piece"></i> Part Creator</button>
+                                </div>
+                            </div>
+
                             <small style="display: block; padding-left: 4px; font-size: 0.78em; opacity: 0.6; margin-top: 10px;">Location Images &amp; Visualization</small>
                             <div id="rpg_loc_images_settings_block" class="rt-loc-settings-block flex-container flexFlowColumn gap-1" style="padding-left: 4px;">
                                 <div class="rt-loc-settings-intro">

@@ -1525,6 +1525,12 @@ export function migrateCustomFields() {
  */
 export const CHAT_STATE_GLOBAL_UI_KEYS = [
     'portraitGeneratorSource',
+    'portraitPromptMode',
+    'portraitTagEmphasisStyle',
+    'portraitTagPrefix',
+    'portraitTagSuffix',
+    'raceCreationMode',
+    'raceReviewCharacterTags',
     'portraitSkipPromptDialog',
     'hideImageGenToasts',
     'portraitUseStoryLookback',

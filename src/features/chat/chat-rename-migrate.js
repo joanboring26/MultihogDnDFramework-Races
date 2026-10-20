@@ -93,7 +93,7 @@ const KNOWN_PARTITION_KEYS = new Set([
     'initialDate', 'initialTime', 'npcRelationshipMax', 'npcRelationshipValues',
     'npcRelationshipLog', 'setup', 'campaignBooks',
     'lastImmersionSceneArtPath', 'lastImmersionSceneArtChatLen',
-    'playerCharacter', 'dungeonReality', 'adventureCompanion',
+    'playerCharacter', 'dungeonReality', 'adventureCompanion', 'characterAppearance',
 ]);
 
 const hasItems = (value) => Array.isArray(value) && value.length > 0;
@@ -119,6 +119,7 @@ export function partitionHasCampaignSubstance(p) {
         'activeWorldKeys', 'keywordActivatedKeys', 'routerLog', 'campaignBooks']
         .some((key) => hasItems(p[key]))) return true;
     if (hasMapEntries(p.customPortraits) || hasMapEntries(p.customLocationImages)
+        || hasMapEntries(p.characterAppearance)
         || hasMapEntries(p.dungeonReality?.sites)
         || hasMapEntries(p.npcRelationshipValues)
         || hasMapEntries(p.npcRelationshipLog)

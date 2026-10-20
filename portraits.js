@@ -20,6 +20,8 @@ import {
 } from './portrait-storage.js';
 import { buildPortraitStoryContext, portraitStoryLookbackCount } from './src/state/portrait-story-lookback.js';
 import { canCommitPassForChat, createChatCommitGuard, chatCommitResult } from './src/state/pass-affinity.js';
+import { buildTagPortraitPrompt } from './src/features/races/appearance.js';
+import { renameCharacterAppearance } from './src/features/races/races-lib.js';
 
 /**
  * Portrait/location AI generation toast — info/success can be hidden via settings.
@@ -148,6 +150,8 @@ function migratePortraitMapKey(oldName, newName) {
     }
 
     const s = getSettings();
+    // Race & parts follow the character even when they have no portrait yet.
+    renameCharacterAppearance(s, getActiveChatId(), oldName, newName);
     if (!s.customPortraits) return { moved: false, displaced: null, src: null };
     const src = s.customPortraits[oldKey];
     if (!src) return { moved: false, displaced: null, src: null };
@@ -618,6 +622,25 @@ export function getPortraitConnectionSettings(baseSettings) {
     };
 }
 
+/** LLM request bound to the portrait connection, for the races / parts pipeline. */
+export function portraitLlmRequest(baseSettings) {
+    return (systemPrompt, userPrompt) => sendStateRequest(getPortraitConnectionSettings(baseSettings), systemPrompt, userPrompt);
+}
+
+/**
+ * Tag-mode prompt: race + character parts + equipment/state as Danbooru tags.
+ * @param {string} entityName
+ * @param {string|null} npcContent lorebook card text, or null to look it up
+ * @returns {Promise<string>}
+ */
+async function generateTagPortraitPrompt(entityName, npcContent) {
+    return buildTagPortraitPrompt(entityName, {
+        request: portraitLlmRequest(getSettings()),
+        npcContent,
+        chatId: getActiveChatId(),
+    });
+}
+
 /**
  * Gathers context and calls the LLM to generate an image prompt for a character.
  * @param {string} entityName
@@ -626,6 +649,9 @@ export function getPortraitConnectionSettings(baseSettings) {
 export async function generatePortraitPrompt(entityName) {
     const ownsOperation = createChatCommitGuard(getActiveChatId(), getActiveChatId);
     const s = getSettings();
+    if (s.portraitPromptMode === 'tags') {
+        return chatCommitResult(ownsOperation, await generateTagPortraitPrompt(entityName, null));
+    }
     const ctx = SillyTavern.getContext();
     const useStoryLookback = !!s.portraitUseStoryLookback;
 
@@ -775,6 +801,10 @@ export async function generatePortraitPrompt(entityName) {
  */
 export async function generateNpcPortraitPrompt(entityName, npcContent) {
     const s = getSettings();
+    if (s.portraitPromptMode === 'tags') {
+        const ownsOperation = createChatCommitGuard(getActiveChatId(), getActiveChatId);
+        return chatCommitResult(ownsOperation, await generateTagPortraitPrompt(entityName, npcContent || ''));
+    }
     const ctx = SillyTavern.getContext();
     const useStoryLookback = !!s.portraitUseStoryLookback;
 
@@ -925,21 +955,20 @@ export async function generatePortraitDirect(prompt, entityName, opts = {}) {
         if (!hasImagine) {
             throw new Error('ST Image Generation extension is not enabled. Please enable it in SillyTavern settings.');
         }
-        const parser = new SlashCommandParser();
-        const escapedPrompt = prompt.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-        const command = `/imagine quiet=true gallery=false extend=false "${escapedPrompt}"`;
+        // Call /imagine's callback directly rather than parsing a command string:
+        // the slash parser would treat {tag} / {{tag}} emphasis as macros and "::" as syntax.
+        const imagine = SlashCommandParser.commands['imagine'];
         const slashAbortController = new SlashCommandAbortController();
         const abortSlashCommand = () => slashAbortController.abort('Real-Time Visualization stopped', true);
         if (externalSignal?.aborted) abortSlashCommand();
         else externalSignal?.addEventListener('abort', abortSlashCommand, { once: true });
-        const closure = parser.parse(command, true, null, slashAbortController);
         let result;
         try {
-            result = await closure.execute();
+            result = await imagine.callback({ quiet: 'true', gallery: 'false', extend: 'false', _abortController: slashAbortController }, prompt);
         } finally {
             externalSignal?.removeEventListener('abort', abortSlashCommand);
         }
-        if (externalSignal?.aborted || result?.isAborted) {
+        if (externalSignal?.aborted || slashAbortController.signal?.aborted) {
             const abortError = new Error('Image generation was stopped');
             abortError.name = 'AbortError';
             throw abortError;
@@ -947,7 +976,7 @@ export async function generatePortraitDirect(prompt, entityName, opts = {}) {
         if (result && result.isError) {
             throw new Error(result.errorMessage || 'ST Image Generation execution failed');
         }
-        const imageUrl = result && result.pipe;
+        const imageUrl = typeof result === 'string' ? result : result && result.pipe;
         if (!imageUrl) {
             throw new Error('No image URL returned from the ST Image Generation extension');
         }

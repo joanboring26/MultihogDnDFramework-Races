@@ -10928,3 +10928,101 @@ dialog .rt-dungeon-graph-asset-tip,
         }
     }
 }
+
+/* ── Races & Parts (Part Creator / Race Creator / character appearance) ── */
+.rt-races-manager,
+.rt-races-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    text-align: left;
+}
+.rt-races-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 55vh;
+    overflow-y: auto;
+}
+.rt-races-row {
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.rt-races-row-header,
+.rt-races-gp-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.rt-races-row-name {
+    flex: 1;
+}
+.rt-races-row-actions {
+    display: flex;
+    gap: 2px;
+}
+.rt-races-icon {
+    padding: 4px 6px;
+    margin: 0;
+}
+.rt-races-row-desc,
+.rt-races-row-tags,
+.rt-races-empty {
+    opacity: 0.7;
+    font-size: 0.85em;
+}
+.rt-races-row-tags {
+    display: block;
+    font-family: var(--monoFontFamily, monospace);
+}
+.rt-races-editor label,
+.rt-races-appearance > label {
+    display: block;
+    margin-top: 4px;
+}
+.rt-races-appearance {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.rt-races-chip {
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 999px;
+    padding: 0 6px;
+    font-size: 0.75em;
+    opacity: 0.8;
+}
+.rt-races-gp,
+.rt-races-gp-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.rt-races-gp-row {
+    border-left: 2px solid var(--SmartThemeBorderColor);
+    padding-left: 6px;
+}
+.rt-races-gp-line select {
+    flex: 1;
+    margin: 0;
+}
+.rt-races-preview {
+    font-family: var(--monoFontFamily, monospace);
+    font-size: 0.85em;
+    padding: 6px;
+    border-radius: 6px;
+    background: var(--black30a, rgba(0, 0, 0, 0.3));
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.rt-races-stale {
+    color: var(--warning, #e8a33d);
+    font-size: 0.9em;
+}
+.rt-races-filter {
+    max-width: 260px;
+}
