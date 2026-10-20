@@ -18,6 +18,7 @@ import { DEFAULT_MAP_EVOLUTION_COMPRESS_SYSTEM_PROMPT } from '../../map-evolutio
 import { DEFAULT_WORLD_PROGRESSION_SYSTEM_PROMPT } from '../../world-progression-prompt.js';
 import { MAIN_SYSPROMPT_BACKUP_KEY } from './main-sysprompt-backup.js';
 import { DEFAULT_MAP_THEME } from './map-themes.js';
+import { makeDefaultAppearanceParts } from '../features/races/races-lib.js';
 import {
     DEFAULT_ROUTER_AUTO_PASS_RESTRICTION,
     DEFAULT_ROUTER_COMBAT_PROFILE_GUIDANCE_AGENT,
@@ -406,6 +407,31 @@ export function buildDefaultSettings() {
          * Not chat-linked. Shape: { id, name, keys, content, portraitPath, notes, createdAt, updatedAt }.
          */
         npcLibrary: [],
+
+        /**
+         * Global races / parts library for tag-mode portraits (see src/features/races/).
+         * Image-prompt only: never injected into story generation.
+         */
+        appearanceParts: makeDefaultAppearanceParts(),
+
+        races: [],
+
+        /** Portrait prompt builder: 'prose' (LLM writes a description) or 'tags' (races + parts, Danbooru tags). */
+        portraitPromptMode: 'prose',
+
+        /** How stored {tag} / N::tag:: emphasis is written for the image backend: 'novelai' | 'sd' | 'none'. */
+        portraitTagEmphasisStyle: 'novelai',
+
+        /** Tags placed before / after every tag-mode portrait prompt. */
+        portraitTagPrefix: 'solo, portrait, upper body, looking at viewer',
+
+        portraitTagSuffix: '',
+
+        /** When no existing race fits a character: 'ask' (review popup), 'auto', or 'never' (no race). */
+        raceCreationMode: 'ask',
+
+        /** Show AI-generated character part tags for review before saving them. */
+        raceReviewCharacterTags: false,
 
         /** Locked chrome for the floating settings window: 'dark' | 'light'. Independent of tracker/ST theme. */
         settingsOverlayAppearance: 'light',

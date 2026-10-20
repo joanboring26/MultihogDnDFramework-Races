@@ -37,6 +37,7 @@ function chatStateSubstanceScore(state) {
     for (const key of [
         'customPortraits',
         'customLocationImages',
+        'characterAppearance',
         'npcRelationshipValues',
         'npcRelationshipLog',
         'worldProgressionLocationLastAdvanced',
@@ -600,6 +601,9 @@ export function saveChatState(chatId, opts = {}) {
 
         // Preserve Player Character pseudo-persona which is injected into the chat state
         playerCharacter: existing.playerCharacter,
+
+        // Race & parts per character (image prompts only), written directly into the partition.
+        characterAppearance: existing.characterAppearance,
 
         // Authored directly in this partition by the narrative interceptor.
         dungeonReality: existing.dungeonReality ? JSON.parse(JSON.stringify(existing.dungeonReality)) : null,

@@ -16,7 +16,7 @@ import { isMapUpdaterRunning, onMapUpdaterUserMessage, runMapUpdaterPass, stopMa
 import { isMapEvolutionRunning, listMappedEvolutionSites, loadMappedEvolutionSite, runMapEvolutionPass, stopMapEvolutionPass } from './map-evolution.js';
 import { summarizeMapEvolutionSchedule, stampEvolutionLastFired, evolutionIntervalHoursForSettings, setSiteEvolutionIntervalOverride, getSiteEvolutionIntervalOverride, normalizeMapEvolutionNarratorCommitTokens } from './map-evolution-lib.js';
 import { getRequestHeaders } from '../../../../script.js';
-import { fileToDataUrl, scaleImageTo512Square, scaleImageToLandscape, applyPortraitData, applyLocationImageData, renamePortraitEntity, reconcileMemoPortraitRenames, generatePortraitPrompt, generateNpcPortraitPrompt, generateLocationImagePrompt, showPortraitPromptPopup, generatePortraitDirect, autoGeneratePartyPortraits, removeAllPortraits, checkAndTriggerAutoGenerations, autoGenerateEnemyPortraits, forceCheckAutoGenerations, resetAutoGenerationTracking, resetRealtimeLocationGenerationFailure, stopRealtimeLocationGeneration, resolveLocationImageWithMeta, normalizeLocationPath, buildLocationPath, getLinkedPlayerCharacter, resolvePortraitSrcForPlayerCharacter, imageGenToast, triggerBackgroundPortraitGeneration, fetchHordeModels } from './portraits.js';
+import { fileToDataUrl, scaleImageTo512Square, scaleImageToLandscape, applyPortraitData, applyLocationImageData, renamePortraitEntity, reconcileMemoPortraitRenames, generatePortraitPrompt, generateNpcPortraitPrompt, generateLocationImagePrompt, showPortraitPromptPopup, generatePortraitDirect, autoGeneratePartyPortraits, removeAllPortraits, checkAndTriggerAutoGenerations, autoGenerateEnemyPortraits, forceCheckAutoGenerations, resetAutoGenerationTracking, resetRealtimeLocationGenerationFailure, stopRealtimeLocationGeneration, resolveLocationImageWithMeta, normalizeLocationPath, buildLocationPath, getLinkedPlayerCharacter, resolvePortraitSrcForPlayerCharacter, imageGenToast, triggerBackgroundPortraitGeneration, fetchHordeModels, portraitLlmRequest } from './portraits.js';
 import { buildImmersionSceneState, renderImmersionViewHtml, getCurrentLocationText, loadLocationEntryByPath, loadNpcEntryByKey, maybeAutoGenerateImmersionSceneArt, runRealtimeSceneArtCheck, resetImmersionSceneArtTracking, hydrateImmersionSceneArtPath } from './immersion.js';
 import { migrateAllEmbeddedPortraits, countEmbeddedPortraitDataUrls, purgeAllPortraitData, resolvePortraitDisplaySrc, lookupCustomPortraitSrc, collectAllPortraitRefs, countPortraitPathRefs, deletePortraitFile, isManagedPortraitPath, isPortraitMigrationLocked, setPortraitMigrationLocked, PORTRAIT_STORAGE_FOLDER, snapshotPortraitMapsForChat, loadPortraitMapsForChat, migrateLegacyPortraitMapsToChat } from './portrait-storage.js';
 import { loadPanelGeometry, loadDeltaHeight, makeDraggable, makeResizableTR, makeResizableBR, makeResizableBL, setupResizeObserver, setupDeltaResize, canResizePanels, jqueryToggleSlide, resolveViewportClampedGeometry, clampFloatingPanelToViewport } from './ui-geometry.js';
@@ -45,6 +45,8 @@ import {
     saveNpcToLibrary,
 } from './npc-library.js';
 import { RENDERING_TAGS_LIBRARY, sectionPages, configureRuntimeActions } from './src/app/runtime-bridge.js';
+import { addRaceWandButtons, bindRaceSettingsUI, configureRaceManager, openCharacterAppearanceEditor } from './src/ui/races/race-manager.js';
+import { recheckCharacterAppearance } from './src/features/races/appearance.js';
 import { bindRenderedCardEvents } from './src/ui/panel/card-events.js';
 import { createDetachedPanel } from './src/ui/panel/detached-panel.js';
 import { scalePanelBackgroundImage, getPanelBgConfig, applyPanelBackgroundToDom, applyTrackerThemeToDom, PANEL_BG_TRACKER_KEYS, PANEL_BG_AGENT_KEYS } from './src/ui/panel/panel-appearance.js';
@@ -4577,6 +4579,9 @@ async function showPortraitSettingsMenu(entityName, onRefresh, npcContent = null
         popupOpts.customButtons.push({ text: '✂️ Crop Existing', result: 5, classes: ['menu_button'] });
         popupOpts.customButtons.push({ text: '🗑 Clear Portrait', result: 2, classes: ['menu_button'] });
     }
+    if (s.portraitPromptMode === 'tags') {
+        popupOpts.customButtons.push({ text: '🧬 Race & Parts', result: 6, classes: ['menu_button'] });
+    }
 
     // Pin before AI Horde / native / Pollinations waits (and before the Apply
     // popup can outlive a chat switch). Custom NPC-library writers stay unpinned.
@@ -4897,7 +4902,11 @@ async function showPortraitSettingsMenu(entityName, onRefresh, npcContent = null
 
     document.removeEventListener('paste', popupPasteHandler);
 
-    if (result === 2) {
+    if (result === 6) {
+        await openCharacterAppearanceEditor(entityName, {
+            recheck: (name) => recheckCharacterAppearance(name, { request: portraitLlmRequest(getSettings()), npcContent }),
+        });
+    } else if (result === 2) {
         await localApply(null);
     } else if (result === 5) {
         try {
@@ -7718,6 +7727,15 @@ function organizeConnectionSettingsUI() {
             settings.portraitSkipPromptDialog = !!$(this).prop('checked');
             saveSettings();
         });
+
+        configureRaceManager({
+            getSettings,
+            saveSettings: () => saveSettings(),
+            getActiveChatId,
+            request: (systemPrompt, userPrompt) => portraitLlmRequest(getSettings())(systemPrompt, userPrompt),
+            refresh: () => refreshRenderedView(),
+        });
+        bindRaceSettingsUI(settings);
 
         $('#rpg_tracker_hide_image_gen_toasts').prop('checked', !!settings.hideImageGenToasts).on('change', function () {
             settings.hideImageGenToasts = !!$(this).prop('checked');
@@ -13045,6 +13063,7 @@ RULES:
         });
 
         wandContainer.appendChild(btn);
+        addRaceWandButtons();
 
         if (!document.getElementById('rpg_tracker_debug_wand_button')) {
             const debugBtn = document.createElement('div');
