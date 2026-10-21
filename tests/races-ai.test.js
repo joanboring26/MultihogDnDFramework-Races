@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { generateCharacterAppearance, generateRaceIdentity, generateRaceParts, generateStateTags, pickRace } from '../src/features/races/races-ai.js';
+import { generateCharacterAppearance, generateRaceFromPrompt, generateRaceIdentity, generateRaceParts, generateStateTags, pickRace } from '../src/features/races/races-ai.js';
 import { makeDefaultAppearanceParts } from '../src/features/races/races-lib.js';
 
 const character = { name: 'Kaede', description: 'A huge red-skinned oni woman with one broken horn.' };
@@ -64,6 +64,53 @@ describe('race creation', () => {
             { partId: 'horns', tags: 'a, b, c, d, e, f' },
             { partId: 'tail', tags: 'red tail' },
             { newPart: { name: 'Antennae', description: 'Antenna shape.' }, tags: 'antennae' },
+        ]);
+    });
+});
+
+describe('race from a prompt', () => {
+    const prompt = 'Fox people from snowy forests with white fur and big fluffy tails.';
+
+    it('sends the user prompt to both steps and returns a full draft', async () => {
+        const request = vi.fn()
+            .mockResolvedValueOnce(JSON.stringify({ name: 'Kitsune', description: 'Small fox people.' }))
+            .mockResolvedValueOnce(JSON.stringify({ parts: [{ partId: 'tail', tags: 'fox tail, big tail' }, { partId: 'ears', tags: 'fox ears' }] }));
+        const out = await generateRaceFromPrompt({ request, prompt, races, parts: makeDefaultAppearanceParts() });
+        expect(out).toEqual({
+            name: 'Kitsune',
+            description: 'Small fox people.',
+            generalParts: [{ partId: 'tail', tags: 'fox tail, big tail' }, { partId: 'ears', tags: 'fox ears' }],
+        });
+        expect(request).toHaveBeenCalledTimes(2);
+        expect(request.mock.calls[0][1]).toContain(prompt);
+        expect(request.mock.calls[0][1]).toContain('Oni, Elf');
+        expect(request.mock.calls[1][1]).toContain(prompt);
+        expect(request.mock.calls[1][1]).toContain('"tail" (Tail)');
+    });
+
+    it('refuses an empty prompt without calling the AI', async () => {
+        const request = vi.fn();
+        await expect(generateRaceFromPrompt({ request, prompt: '  ', races, parts: [] })).rejects.toThrow();
+        expect(request).not.toHaveBeenCalled();
+    });
+
+    it('never duplicates existing parts, and merges repeated rows', async () => {
+        const request = vi.fn()
+            .mockResolvedValueOnce(JSON.stringify({ name: 'Kitsune', description: 'Fox people.' }))
+            .mockResolvedValueOnce(JSON.stringify({
+                parts: [
+                    { partId: 'tail', tags: 'fox tail' },
+                    { newPart: { name: 'Tails', description: 'Tail.' }, tags: 'fluffy tail, fox tail' },
+                    { partId: 'Ear', tags: 'fox ears' },
+                    { newPart: { name: 'Fur', description: 'Fur color and texture.' }, tags: 'white fur' },
+                    { newPart: { name: 'fur', description: 'Again.' }, tags: 'fluffy' },
+                ],
+            }));
+        const out = await generateRaceFromPrompt({ request, prompt, races: [], parts: makeDefaultAppearanceParts() });
+        expect(out.generalParts).toEqual([
+            { partId: 'tail', tags: 'fox tail, fluffy tail' },
+            { partId: 'ears', tags: 'fox ears' },
+            { newPart: { name: 'Fur', description: 'Fur color and texture.' }, tags: 'white fur, fluffy' },
         ]);
     });
 });

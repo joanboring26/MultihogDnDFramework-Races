@@ -13,6 +13,7 @@ import {
     deletePart,
     deleteRace,
     findPart,
+    findSimilarByName,
     getCharacterAppearance,
     getRaces,
     importRacePack,
@@ -27,7 +28,7 @@ import {
     updateRace,
 } from '../../features/races/races-lib.js';
 import { MAX_TAG_EMPHASIS, normalizeTags, parseJsonReply } from '../../features/races/tag-utils.js';
-import { generateRaceParts } from '../../features/races/races-ai.js';
+import { generateRaceFromPrompt, generateRaceParts } from '../../features/races/races-ai.js';
 
 const TITLE = 'Races & Parts';
 const TAG_PLACEHOLDER = 'tag, {important tag}, 2::weighted tag::';
@@ -343,6 +344,77 @@ async function confirmDeleteRace(race) {
     save();
 }
 
+let lastRacePrompt = '';
+
+/** Remove parts created since `before` that no race or character uses. */
+function dropUnusedNewParts(s, before) {
+    for (const p of sortedParts(s)) {
+        if (before.has(p.id)) continue;
+        const usage = partUsage(s, p.id);
+        if (!usage.races.length && !usage.characters) deletePart(s, p.id);
+    }
+}
+
+/** Race Creator "Generate from prompt": the AI drafts a whole race, the user reviews it. */
+async function createRaceFromPrompt() {
+    const $content = $('<div class="rt-races-editor"></div>');
+    $content.append('<h3>Generate race from prompt</h3>');
+    $content.append('<small>Describe the race or give the AI instructions. It writes the name and description, picks existing parts (or adds missing ones) and tags them. You can edit everything before it is saved.</small>');
+    const $prompt = $('<textarea class="text_pole textarea_compact" rows="5"></textarea>')
+        .attr('placeholder', 'e.g. Small fox people from snowy forests, with white fur, big fluffy tails and black-tipped ears. Make the tail the most important feature.')
+        .val(lastRacePrompt);
+    $content.append('<label>Description or instructions</label>', $prompt);
+    if (!(await showPopup($content, { okButton: 'Generate', cancelButton: 'Cancel' }))) return;
+    const prompt = String($prompt.val()).trim();
+    lastRacePrompt = prompt;
+    if (!prompt) return toastr['warning']('Describe the race first.', TITLE);
+
+    const s = need().getSettings();
+    const $toast = toastr['info']('Generating race…', TITLE, { timeOut: 0, extendedTimeOut: 0 });
+    let draft;
+    try {
+        draft = await generateRaceFromPrompt({ request: need().request, prompt, races: getRaces(s), parts: raceAssignableParts(s) });
+    } catch (err) {
+        console.error('[RPG Tracker] Race generation failed', err);
+        return toastr['error'](`Couldn't generate the race: ${err.message || err}`, TITLE);
+    } finally {
+        toastr.clear($toast);
+    }
+
+    const newParts = draft.generalParts.filter(gp => !gp.partId).map(gp => gp.newPart.name);
+    // New parts must exist for the table's dropdowns; unused ones are removed again on cancel.
+    const before = new Set(sortedParts(s).map(p => p.id));
+    let current = { ...draft, generalParts: materializeParts(s, draft.generalParts) };
+    for (;;) {
+        const clash = findSimilarByName(getRaces(s), current.name)?.exact;
+        const notes = [
+            newParts.length ? `new parts: ${newParts.join(', ')}` : '',
+            clash ? `a race named "${current.name}" already exists, rename it` : '',
+        ].filter(Boolean);
+        const result = await raceEditorPopup(current, {
+            title: `New race from prompt${notes.length ? ` (${notes.join('; ')})` : ''}`,
+            okButton: 'Create race',
+        });
+        if (!result) {
+            dropUnusedNewParts(s, before);
+            save();
+            return;
+        }
+        try {
+            const race = createRace(s, { ...result, createdBy: 'ai', originChatId: need().getActiveChatId() });
+            dropUnusedNewParts(s, before);
+            save();
+            lastRacePrompt = '';
+            toastr['success'](`Created race "${race.name}".`, TITLE);
+            return;
+        } catch (err) {
+            // Name clash: reopen the editor with the user's edits so nothing is lost.
+            toastr['warning'](String(err.message || err), TITLE);
+            current = result;
+        }
+    }
+}
+
 /** Browse, add, edit, delete, import and export races. */
 export async function openRaceCreator() {
     const $content = $('<div class="rt-races-manager"></div>');
@@ -384,6 +456,7 @@ export async function openRaceCreator() {
 
     const $buttons = $('<div class="flex-container"></div>').append(
         textButton('fa-plus', 'New race').on('click', async () => { await editRace(); render(); }),
+        textButton('fa-wand-magic-sparkles', 'Generate from prompt').on('click', async () => { await createRaceFromPrompt(); render(); }),
         textButton('fa-file-import', 'Import').on('click', async () => {
             const text = await pickJsonFile();
             if (!text) return;

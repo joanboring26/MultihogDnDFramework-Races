@@ -4,7 +4,7 @@
  * prompts and reply validation are testable without SillyTavern.
  */
 
-import { TAG_RULES, normalizeTags, parseJsonReply } from './tag-utils.js';
+import { TAG_RULES, normalizeTags, parseJsonReply, tagKey } from './tag-utils.js';
 import { findSimilarByName } from './races-lib.js';
 
 /** @typedef {(systemPrompt: string, userPrompt: string) => Promise<string>} RaceLlmRequest */
@@ -35,6 +35,8 @@ function characterBlock(character) {
 function partListBlock(parts) {
     return parts.map(p => `- "${p.id}" (${p.name}): ${p.description}`).join('\n');
 }
+
+const NO_DUPLICATE_PARTS = 'Never create a new part that repeats or overlaps an existing one (e.g. "Horn" when "Horns" exists, "Fur" when "Skin" covers it): use the existing id instead. Use each part at most once.';
 
 /**
  * Pick a race for a character from the library.
@@ -88,10 +90,10 @@ Respond with ONLY: {"name": "...", "description": "..."}`);
 
 /**
  * Step 2 of race creation: general parts and their tags.
- * @param {{ request: RaceLlmRequest, race: { name: string, description: string }, parts: any[] }} args
+ * @param {{ request: RaceLlmRequest, race: { name: string, description: string }, parts: any[], instructions?: string }} args
  * @returns {Promise<{ parts: { partId?: string, newPart?: { name: string, description: string }, tags: string }[] }>}
  */
-export async function generateRaceParts({ request, race, parts }) {
+export async function generateRaceParts({ request, race, parts, instructions = '' }) {
     const parsed = await requestJson(request, `Define the body parts that EVERY member of this race always has, and tag them for an image generator.
 
 RACE
@@ -100,10 +102,10 @@ ${race.description}
 
 EXISTING PARTS (use these ids whenever they fit)
 ${partListBlock(parts)}
-
+${instructions ? `\nUSER INSTRUCTIONS (follow these)\n${instructions}\n` : ''}
 Instructions:
 1. Pick the existing parts that need race-wide tags (skip parts with nothing race-specific about them).
-2. If something the race always has is not covered by an existing part (e.g. a tail, antennae), create a new part with a very short description of what it covers.
+2. If something the race always has is not covered by an existing part (e.g. a tail, antennae), create a new part with a very short description of what it covers. ${NO_DUPLICATE_PARTS}
 3. For each part, give a few Danbooru tags (max ${MAX_TAGS_PER_PART}) describing that part for ALL members of the race. Nothing individual like hair color unless the whole race shares it.
 
 ${TAG_RULES}
@@ -111,6 +113,34 @@ ${TAG_RULES}
 Respond with ONLY:
 {"parts": [{"partId": "horns", "tags": "tag, tag"}, {"newPart": {"name": "Tail", "description": "Tail type, length and color."}, "tags": "tag, tag"}]}`);
     return { parts: cleanPartReplies(parsed.parts, parts, false) };
+}
+
+/**
+ * Race Creator "Generate from prompt": a whole race from the user's description or instructions.
+ * Same two steps as automatic race creation (identity, then general parts), with the
+ * user's text passed to both.
+ * @param {{ request: RaceLlmRequest, prompt: string, races: any[], parts: any[] }} args
+ * @returns {Promise<{ name: string, description: string, generalParts: { partId?: string, newPart?: { name: string, description: string }, tags: string }[] }>}
+ */
+export async function generateRaceFromPrompt({ request, prompt, races, parts }) {
+    const instructions = String(prompt || '').trim();
+    if (!instructions) throw new Error('Describe the race first.');
+    const taken = races.length ? `\nThese races already exist and must not be repeated: ${races.map(r => r.name).join(', ')}.` : '';
+    const parsed = await requestJson(request, `Create a race/species from the user's description or instructions.
+
+USER INSTRUCTIONS
+${instructions}
+${taken}
+Rules:
+- name: the species name, ONE word if at all possible (e.g. "Oni", "Goblin", "Tiefling"), unless the user gave a name.
+- description: one short paragraph describing the common VISUAL characteristics shared by all members of the race (size, build, skin, distinctive features). No lore or personality.
+
+Respond with ONLY: {"name": "...", "description": "..."}`);
+    const name = String(parsed.name || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+    if (!name) throw new Error('The AI did not return a race name.');
+    const identity = { name, description: String(parsed.description || '').trim() };
+    const { parts: generalParts } = await generateRaceParts({ request, race: identity, parts, instructions });
+    return { ...identity, generalParts };
 }
 
 /**
@@ -140,7 +170,7 @@ Instructions:
 2. parts: ONLY where this character adds detail to, or differs from, the race tags (hair color and style, eye color, scars, a tail the base race lacks…). Do not repeat race tags. Skip parts that need nothing extra.
    - mode "add" (default): tags are added to the race tags. Prefix a tag with "-" to drop one race tag, e.g. "-two horns, one horn, broken horn".
    - mode "replace": the race tags for that part are wrong for this character and are dropped entirely.
-   - If the character has a body part the race does not, use an existing part id, or create one with newPart.
+   - If the character has a body part the race does not, use an existing part id, or create one with newPart. ${NO_DUPLICATE_PARTS}
 3. equipment: what the character currently wears and carries (clothing, armor, weapons, accessories). Empty string if unknown.
 4. state: current visible state (expression, injuries, dirt, pose-neutral). Empty string if nothing notable.
 Keep every list short (max ${MAX_TAGS_PER_PART} tags per part).
@@ -180,26 +210,44 @@ Respond with ONLY: {"equipment": "tag, tag", "state": "tag"}`);
 /**
  * Validate the `parts` array of an AI reply. Unknown part ids are matched by
  * name against existing parts first; truly new parts come back as `newPart`.
+ * Rows for the same part (or the same new part) are merged into one, so the AI
+ * cannot add a part twice.
  */
 function cleanPartReplies(list, parts, withMode) {
     const assignable = parts.filter(p => p.kind !== 'subject');
-    const out = [];
+    /** @type {Map<string, any>} */
+    const out = new Map();
     for (const item of Array.isArray(list) ? list : []) {
         if (!item || typeof item !== 'object') continue;
-        const tags = withMode ? normalizeTags(item.tags || '') : limitTags(item.tags || '');
         const mode = withMode && item.mode === 'replace' ? 'replace' : 'add';
-        if (!tags && mode === 'add') continue;
         const id = String(item.partId || '').trim();
         let part = assignable.find(p => p.id === id) || (id ? findSimilarByName(assignable, id)?.item : null);
         const newName = String(item.newPart?.name || '').trim();
         if (!part && newName) part = findSimilarByName(assignable, newName)?.item || null;
-        const entry = part
-            ? { partId: part.id, tags }
-            : newName
-                ? { newPart: { name: newName.slice(0, 40), description: String(item.newPart.description || '').trim() }, tags }
-                : null;
-        if (!entry) continue;
-        out.push(withMode ? { ...entry, mode } : entry);
+        if (!part && !newName) continue;
+        const key = part ? `id:${part.id}` : `new:${findSimilarByName(newPartsOf(out), newName)?.item.name.toLowerCase() ?? newName.toLowerCase()}`;
+        const prev = out.get(key);
+        const tags = joinTags(prev?.tags, item.tags);
+        const entry = prev || (part
+            ? { partId: part.id }
+            : { newPart: { name: newName.slice(0, 40), description: String(item.newPart.description || '').trim() } });
+        entry.tags = tags;
+        if (withMode) entry.mode = prev?.mode === 'replace' ? 'replace' : mode;
+        out.set(key, entry);
     }
-    return out;
+    return Array.from(out.values())
+        .map(e => (withMode ? e : { ...e, tags: limitTags(e.tags) }))
+        .filter(e => e.tags || e.mode === 'replace')
+        .map(e => (withMode ? { ...e, tags: normalizeTags(e.tags) } : e));
+}
+
+function newPartsOf(entries) {
+    return Array.from(entries.values()).filter(e => e.newPart).map(e => e.newPart);
+}
+
+/** Concatenate two tag strings, dropping exact repeats. */
+function joinTags(a, b) {
+    const list = normalizeTags([a, b].filter(Boolean).map(String).join(', ')).split(', ').filter(Boolean);
+    const seen = new Set();
+    return list.filter(t => !seen.has(tagKey(t)) && seen.add(tagKey(t))).join(', ');
 }
