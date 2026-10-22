@@ -94,7 +94,7 @@ Respond with ONLY: {"name": "...", "description": "..."}`);
  * @returns {Promise<{ parts: { partId?: string, newPart?: { name: string, description: string }, tags: string }[] }>}
  */
 export async function generateRaceParts({ request, race, parts, instructions = '' }) {
-    const parsed = await requestJson(request, `Define the body parts that EVERY member of this race always has, and tag them for an image generator.
+    const prompt = `Define the body parts that EVERY member of this race always has, and tag them for an image generator.
 
 RACE
 Name: ${race.name}
@@ -106,13 +106,21 @@ ${instructions ? `\nUSER INSTRUCTIONS (follow these)\n${instructions}\n` : ''}
 Instructions:
 1. Pick the existing parts that need race-wide tags (skip parts with nothing race-specific about them).
 2. If something the race always has is not covered by an existing part (e.g. a tail, antennae), create a new part with a very short description of what it covers. ${NO_DUPLICATE_PARTS}
-3. For each part, give a few Danbooru tags (max ${MAX_TAGS_PER_PART}) describing that part for ALL members of the race. Nothing individual like hair color unless the whole race shares it.
+3. For each part, give a few Danbooru tags (max ${MAX_TAGS_PER_PART}) describing that part for ALL members of the race. Nothing individual like hair color unless the whole race shares it.${instructions ? `
+4. Every feature or tag the user instructions mention must appear as tags on the matching part. Keep any emphasis the user wrote ({tag}, N::tag::) exactly as written.` : ''}
 
 ${TAG_RULES}
 
-Respond with ONLY:
-{"parts": [{"partId": "horns", "tags": "tag, tag"}, {"newPart": {"name": "Tail", "description": "Tail type, length and color."}, "tags": "tag, tag"}]}`);
-    return { parts: cleanPartReplies(parsed.parts, parts, false) };
+Respond with ONLY a JSON object in exactly this shape ("partId" is an id from the list above):
+{"parts": [{"partId": "horns", "tags": "tag, tag"}, {"newPart": {"name": "Tail", "description": "Tail type, length and color."}, "tags": "tag, tag"}]}`;
+    const parsed = await requestJson(request, prompt);
+    const cleaned = cleanPartReplies(replyParts(parsed), parts, false);
+    if (cleaned.length) return { parts: cleaned };
+    // A reply in the wrong shape (or with no tags) gets one corrective retry.
+    const retry = await requestJson(request, `${prompt}
+
+Your previous reply had no usable parts with tags. Every entry needs "partId" (or "newPart") and a non-empty "tags" string.`);
+    return { parts: cleanPartReplies(replyParts(retry), parts, false) };
 }
 
 /**
@@ -204,7 +212,7 @@ Respond with ONLY:
 {"subject": "1girl", "parts": [{"partId": "hair", "tags": "white hair, long hair", "mode": "add"}], "equipment": "tag, tag", "state": "tag"}`);
     return {
         subject: limitTags(parsed.subject || ''),
-        parts: cleanPartReplies(parsed.parts, parts, true),
+        parts: cleanPartReplies(replyParts(parsed), parts, true),
         equipment: normalizeTags(parsed.equipment || ''),
         state: normalizeTags(parsed.state || ''),
     };
@@ -231,29 +239,71 @@ Respond with ONLY: {"equipment": "tag, tag", "state": "tag"}`);
 }
 
 /**
- * Validate the `parts` array of an AI reply. Unknown part ids are matched by
- * name against existing parts first; truly new parts come back as `newPart`.
+ * The parts list of an AI reply, whatever shape the model chose: `parts`,
+ * `generalParts` and similar keys, a bare array, or an object map
+ * `{ "horns": "tag, tag" }`.
+ * @returns {any[]}
+ */
+function replyParts(parsed) {
+    if (Array.isArray(parsed)) return parsed;
+    const raw = parsed?.parts ?? parsed?.generalParts ?? parsed?.general_parts ?? parsed?.bodyParts ?? parsed?.characterParts ?? parsed?.race?.parts;
+    if (Array.isArray(raw)) return raw;
+    if (raw && typeof raw === 'object') {
+        return Object.entries(raw).map(([partId, value]) => (value && typeof value === 'object' && !Array.isArray(value) ? { partId, ...value } : { partId, tags: value }));
+    }
+    return [];
+}
+
+/** Find a part by id or name, also trying "Name (id)" and "snake_case" spellings. */
+function matchPart(parts, ref) {
+    const text = String(ref || '').trim();
+    if (!text) return null;
+    const inner = text.match(/\(([^)]+)\)/)?.[1] || '';
+    const outer = text.replace(/\s*\(.*?\)/g, '').trim();
+    for (const candidate of [text, inner, outer, text.replace(/[_-]+/g, ' ')]) {
+        const c = candidate.trim();
+        if (!c) continue;
+        const part = parts.find(p => p.id === c || p.id === c.toLowerCase()) || findSimilarByName(parts, c)?.item;
+        if (part) return part;
+    }
+    return null;
+}
+
+const titleCase = (text) => String(text).replace(/[_-]+/g, ' ').replace(/\s*\(.*?\)/g, '').trim().replace(/\b\w/g, c => c.toUpperCase());
+
+/**
+ * Validate the `parts` array of an AI reply. Part references (`partId`, `id`,
+ * `part`, `name`…) are matched by id or name against existing parts first. In
+ * race replies a reference to a part that does not exist comes back as `newPart`;
+ * character replies need an explicit `newPart` for that.
  * Rows for the same part (or the same new part) are merged into one, so the AI
  * cannot add a part twice.
  */
 function cleanPartReplies(list, parts, withMode) {
     const assignable = parts.filter(p => p.kind !== 'subject');
+    const subjectIds = new Set(parts.filter(p => p.kind === 'subject').map(p => p.id));
     /** @type {Map<string, any>} */
     const out = new Map();
     for (const item of Array.isArray(list) ? list : []) {
         if (!item || typeof item !== 'object') continue;
         const mode = withMode && item.mode === 'replace' ? 'replace' : 'add';
-        const id = String(item.partId || '').trim();
-        let part = assignable.find(p => p.id === id) || (id ? findSimilarByName(assignable, id)?.item : null);
-        const newName = String(item.newPart?.name || '').trim();
-        if (!part && newName) part = findSimilarByName(assignable, newName)?.item || null;
-        if (!part && !newName) continue;
+        const newPartObj = item.newPart && typeof item.newPart === 'object' ? item.newPart : null;
+        const ref = item.partId ?? item.part_id ?? item.id ?? item.part ?? item.partName ?? item.name
+            ?? (typeof item.newPart === 'string' ? item.newPart : newPartObj?.name);
+        if (subjectIds.has(String(ref || '').trim().toLowerCase())) continue;
+        let part = matchPart(assignable, ref);
+        if (!part && newPartObj?.name) part = matchPart(assignable, newPartObj.name);
+        // Character replies only add parts through an explicit newPart, so a stray
+        // "clothing" or "weapon" reference cannot become a permanent body part.
+        if (!part && withMode && !newPartObj && typeof item.newPart !== 'string') continue;
+        const newName = part ? '' : titleCase(newPartObj?.name || ref || '');
+        if (!part && (!newName || matchPart(parts, newName)?.kind === 'subject')) continue;
         const key = part ? `id:${part.id}` : `new:${findSimilarByName(newPartsOf(out), newName)?.item.name.toLowerCase() ?? newName.toLowerCase()}`;
         const prev = out.get(key);
-        const tags = joinTags(prev?.tags, item.tags);
+        const tags = joinTags(prev?.tags, item.tags ?? item.tag ?? item.danbooruTags);
         const entry = prev || (part
             ? { partId: part.id }
-            : { newPart: { name: newName.slice(0, 40), description: String(item.newPart.description || '').trim() } });
+            : { newPart: { name: newName.slice(0, 40), description: String(newPartObj?.description || item.description || '').trim() } });
         entry.tags = tags;
         if (withMode) entry.mode = prev?.mode === 'replace' ? 'replace' : mode;
         out.set(key, entry);
@@ -270,7 +320,7 @@ function newPartsOf(entries) {
 
 /** Concatenate two tag strings, dropping exact repeats. */
 function joinTags(a, b) {
-    const list = normalizeTags([a, b].filter(Boolean).map(String).join(', ')).split(', ').filter(Boolean);
+    const list = normalizeTags([a, b].flat().filter(Boolean).map(String).join(', ')).split(', ').filter(Boolean);
     const seen = new Set();
     return list.filter(t => !seen.has(tagKey(t)) && seen.add(tagKey(t))).join(', ');
 }

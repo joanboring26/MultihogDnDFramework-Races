@@ -18,6 +18,7 @@ All notable changes to the **Multihog D&D Framework** will be documented in this
   - Race and part tags, parts and part descriptions are image-only and never reach story generation.
 
 ### Fixed
+- Races & Parts: Generate from prompt (and automatic race tagging) no longer comes back without tags when a real model answers in a slightly different JSON shape. Part references by `id`/`part`/`name`, `generalParts` keys, tag arrays, object maps, unknown part ids (now new parts), trailing commas and `<think>` blocks are all accepted, an empty reply is retried once, and the AI is told to keep the features and tags written in your prompt.
 - ST Image Generation backend now calls `/imagine` directly instead of through the slash-command parser, so `{tag}` emphasis is no longer treated as a macro.
 
 ## [2026.9.25] - 2026-09-27
