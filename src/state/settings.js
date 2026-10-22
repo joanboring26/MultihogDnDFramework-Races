@@ -1531,6 +1531,8 @@ export const CHAT_STATE_GLOBAL_UI_KEYS = [
     'portraitTagSuffix',
     'raceCreationMode',
     'raceReviewCharacterTags',
+    'raceAutoAssign',
+    'raceDescriptionsInContext',
     'portraitSkipPromptDialog',
     'hideImageGenToasts',
     'portraitUseStoryLookback',

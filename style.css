@@ -10989,6 +10989,24 @@ dialog .rt-dungeon-graph-asset-tip,
     flex-direction: column;
     gap: 4px;
 }
+.rt-races-desc-ai {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+}
+.rt-races-desc-ai-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-self: stretch;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    padding: 6px 8px;
+}
+.rt-races-editor .rt-races-desc-ai-panel label.checkbox_label {
+    display: flex;
+}
 .rt-races-chip {
     border: 1px solid var(--SmartThemeBorderColor);
     border-radius: 999px;

@@ -47,6 +47,7 @@ import {
 import { RENDERING_TAGS_LIBRARY, sectionPages, configureRuntimeActions } from './src/app/runtime-bridge.js';
 import { addRaceWandButtons, bindRaceSettingsUI, configureRaceManager, openCharacterAppearanceEditor } from './src/ui/races/race-manager.js';
 import { recheckCharacterAppearance } from './src/features/races/appearance.js';
+import { autoAssignRaces } from './src/features/races/race-assign.js';
 import { bindRenderedCardEvents } from './src/ui/panel/card-events.js';
 import { createDetachedPanel } from './src/ui/panel/detached-panel.js';
 import { scalePanelBackgroundImage, getPanelBgConfig, applyPanelBackgroundToDom, applyTrackerThemeToDom, PANEL_BG_TRACKER_KEYS, PANEL_BG_AGENT_KEYS } from './src/ui/panel/panel-appearance.js';
@@ -230,6 +231,12 @@ function scheduleDeferred(fn) {
     } else {
         setTimeout(() => { void fn(); }, 0);
     }
+}
+
+/** Portrait auto-generation plus race auto-assignment (which runs even with portraits off). */
+function checkAutoGenerationsAndRaces(refresh) {
+    void autoAssignRaces().catch(err => console.warn('[RPG Tracker] Race auto-assignment failed:', err));
+    return checkAndTriggerAutoGenerations(refresh);
 }
 
 /** Refresh CAMPAIGN RECORDS only when the Lorebook Agent panel is open (avoids heavy load on F5). */
@@ -4579,7 +4586,7 @@ async function showPortraitSettingsMenu(entityName, onRefresh, npcContent = null
         popupOpts.customButtons.push({ text: '✂️ Crop Existing', result: 5, classes: ['menu_button'] });
         popupOpts.customButtons.push({ text: '🗑 Clear Portrait', result: 2, classes: ['menu_button'] });
     }
-    if (s.portraitPromptMode === 'tags') {
+    if (s.portraitPromptMode === 'tags' || s.raceAutoAssign !== false) {
         popupOpts.customButtons.push({ text: '🧬 Race & Parts', result: 6, classes: ['menu_button'] });
     }
 
@@ -5367,7 +5374,7 @@ export function refreshRenderedView() {
     });
 
     if (runtimeState.historyViewIndex === -1) {
-        scheduleDeferred(() => checkAndTriggerAutoGenerations(refreshAll));
+        scheduleDeferred(() => checkAutoGenerationsAndRaces(refreshAll));
     }
 
     void globalThis._rpgRefreshAgentManifest().catch(() => { });
@@ -5404,7 +5411,7 @@ function createPanel() {
         canResizePanels,
         captureRouterLoreState,
         restoreActiveDungeonMapHistory,
-        checkAndTriggerAutoGenerations,
+        checkAndTriggerAutoGenerations: checkAutoGenerationsAndRaces,
         clampFloatingPanelToViewport,
         resolveViewportClampedGeometry,
         clampRelationshipValue,

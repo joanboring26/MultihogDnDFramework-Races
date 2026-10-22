@@ -426,6 +426,21 @@
                                 <input id="rpg_tag_prompt_prefix" type="text" class="text_pole" style="font-size: 0.85em;" placeholder="solo, portrait, upper body" />
                                 <label style="font-size: 0.82em; opacity: 0.75;">Tags after every portrait</label>
                                 <input id="rpg_tag_prompt_suffix" type="text" class="text_pole" style="font-size: 0.85em;" placeholder="best quality, very aesthetic" />
+                            </div>
+                            <small style="display: block; padding-left: 4px; font-size: 0.78em; opacity: 0.6; margin-top: 10px;">Races</small>
+                            <div id="rpg_races_settings_block" class="flex-container flexFlowColumn gap-1" style="padding-left: 4px;">
+                                <label class="checkbox_label">
+                                    <input id="rpg_race_auto_assign" type="checkbox" />
+                                    <span>Give every character a race when they appear</span>
+                                    <i class="fa-solid fa-circle-question interactable"
+                                        title="The player, party members, combatants and lorebook NPCs get a race (and character part tags) as soon as they appear, whether or not they have a portrait. Off: races are only assigned at a character's first tag-mode portrait."></i>
+                                </label>
+                                <label class="checkbox_label">
+                                    <input id="rpg_race_descriptions_in_context" type="checkbox" />
+                                    <span>Add race descriptions to the story context</span>
+                                    <i class="fa-solid fa-circle-question interactable"
+                                        title="Each turn, the narrator gets a [RACES] block with the name and description of the races of the characters in the scene. Tags and parts are never sent to the story."></i>
+                                </label>
                                 <div style="display: flex; align-items: center; gap: 8px;">
                                     <label style="font-size: 0.82em; opacity: 0.75; white-space: nowrap;">New races
                                         <i class="fa-solid fa-circle-question interactable"

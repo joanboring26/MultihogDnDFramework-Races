@@ -13,6 +13,7 @@ import {
     deletePart,
     deleteRace,
     findPart,
+    findSimilarByName,
     getCharacterAppearance,
     getRaces,
     importRacePack,
@@ -27,7 +28,7 @@ import {
     updateRace,
 } from '../../features/races/races-lib.js';
 import { MAX_TAG_EMPHASIS, normalizeTags, parseJsonReply } from '../../features/races/tag-utils.js';
-import { generateRaceParts } from '../../features/races/races-ai.js';
+import { generateRaceDescription, generateRaceFromPrompt, generateRaceParts } from '../../features/races/races-ai.js';
 
 const TITLE = 'Races & Parts';
 const TAG_PLACEHOLDER = 'tag, {important tag}, 2::weighted tag::';
@@ -276,6 +277,44 @@ function materializeParts(s, rows) {
 }
 
 /**
+ * "Write description with AI" for the race editor: a prompt and, optionally,
+ * the general parts currently in the table. Fills the description field.
+ */
+function descriptionGenerator({ $name, $desc, table }) {
+    const $wrap = $('<div class="rt-races-desc-ai"></div>');
+    const $toggle = textButton('fa-wand-magic-sparkles', 'Write description with AI');
+    const $panel = $('<div class="rt-races-desc-ai-panel"></div>').hide();
+    const $prompt = $('<textarea class="text_pole textarea_compact" rows="2"></textarea>')
+        .attr('placeholder', 'e.g. Proud mountain dwellers, scarred and weathered. Mention their glowing eyes.');
+    const $useParts = $('<input type="checkbox" />').prop('checked', true);
+    const $go = textButton('fa-pen-nib', 'Generate description');
+    $toggle.on('click', () => $panel.toggle());
+    $go.on('click', async () => {
+        const s = need().getSettings();
+        const parts = $useParts.prop('checked')
+            ? table.read().filter(r => r.tags).map(r => ({ name: findPart(s, r.partId)?.name || r.partId, tags: r.tags }))
+            : null;
+        const prompt = String($prompt.val()).trim();
+        if (!prompt && !parts?.length) return toastr['warning']('Write a prompt, or add general parts with tags and tick "Use this race\'s parts".', TITLE);
+        $go.addClass('disabled');
+        try {
+            $desc.val(await generateRaceDescription({ request: need().request, prompt, name: String($name.val()).trim(), parts }));
+        } catch (err) {
+            console.error('[RPG Tracker] Race description generation failed', err);
+            toastr['error'](`Couldn't write the description: ${err.message || err}`, TITLE);
+        } finally {
+            $go.removeClass('disabled');
+        }
+    });
+    $panel.append(
+        '<label>Prompt for the AI (optional when using parts)</label>', $prompt,
+        $('<label class="checkbox_label"></label>').append($useParts, '<span>Use this race\'s parts and tags</span>'),
+        $go,
+    );
+    return $wrap.append($toggle, $panel);
+}
+
+/**
  * Race editor popup. Also used to review an AI-proposed race.
  * @param {{ id?: string, name: string, description: string, generalParts: { partId: string, tags: string }[] }} draft
  * @param {{ title?: string, okButton?: string }} [opts]
@@ -304,9 +343,10 @@ async function raceEditorPopup(draft, opts = {}) {
             $ai.removeClass('disabled');
         }
     });
+    const descAi = descriptionGenerator({ $name, $desc, table });
     $content.append(
         '<label>Name</label>', $name,
-        '<label>Description (visual, shared by all members)</label>', $desc,
+        '<label>Description (visual, shared by all members)</label>', $desc, descAi,
         '<label>General parts and their tags</label>', table.$el, $ai,
         $('<small></small>').text(EMPHASIS_HINT),
     );
@@ -341,6 +381,77 @@ async function confirmDeleteRace(race) {
     if (!(await confirmPopup(`Delete race "${race.name}"?`, body))) return;
     deleteRace(s, race.id);
     save();
+}
+
+let lastRacePrompt = '';
+
+/** Remove parts created since `before` that no race or character uses. */
+function dropUnusedNewParts(s, before) {
+    for (const p of sortedParts(s)) {
+        if (before.has(p.id)) continue;
+        const usage = partUsage(s, p.id);
+        if (!usage.races.length && !usage.characters) deletePart(s, p.id);
+    }
+}
+
+/** Race Creator "Generate from prompt": the AI drafts a whole race, the user reviews it. */
+async function createRaceFromPrompt() {
+    const $content = $('<div class="rt-races-editor"></div>');
+    $content.append('<h3>Generate race from prompt</h3>');
+    $content.append('<small>Describe the race or give the AI instructions. It writes the name and description, picks existing parts (or adds missing ones) and tags them. You can edit everything before it is saved.</small>');
+    const $prompt = $('<textarea class="text_pole textarea_compact" rows="5"></textarea>')
+        .attr('placeholder', 'e.g. Small fox people from snowy forests, with white fur, big fluffy tails and black-tipped ears. Make the tail the most important feature.')
+        .val(lastRacePrompt);
+    $content.append('<label>Description or instructions</label>', $prompt);
+    if (!(await showPopup($content, { okButton: 'Generate', cancelButton: 'Cancel' }))) return;
+    const prompt = String($prompt.val()).trim();
+    lastRacePrompt = prompt;
+    if (!prompt) return toastr['warning']('Describe the race first.', TITLE);
+
+    const s = need().getSettings();
+    const $toast = toastr['info']('Generating race…', TITLE, { timeOut: 0, extendedTimeOut: 0 });
+    let draft;
+    try {
+        draft = await generateRaceFromPrompt({ request: need().request, prompt, races: getRaces(s), parts: raceAssignableParts(s) });
+    } catch (err) {
+        console.error('[RPG Tracker] Race generation failed', err);
+        return toastr['error'](`Couldn't generate the race: ${err.message || err}`, TITLE);
+    } finally {
+        toastr.clear($toast);
+    }
+
+    const newParts = draft.generalParts.filter(gp => !gp.partId).map(gp => gp.newPart.name);
+    // New parts must exist for the table's dropdowns; unused ones are removed again on cancel.
+    const before = new Set(sortedParts(s).map(p => p.id));
+    let current = { ...draft, generalParts: materializeParts(s, draft.generalParts) };
+    for (;;) {
+        const clash = findSimilarByName(getRaces(s), current.name)?.exact;
+        const notes = [
+            newParts.length ? `new parts: ${newParts.join(', ')}` : '',
+            clash ? `a race named "${current.name}" already exists, rename it` : '',
+        ].filter(Boolean);
+        const result = await raceEditorPopup(current, {
+            title: `New race from prompt${notes.length ? ` (${notes.join('; ')})` : ''}`,
+            okButton: 'Create race',
+        });
+        if (!result) {
+            dropUnusedNewParts(s, before);
+            save();
+            return;
+        }
+        try {
+            const race = createRace(s, { ...result, createdBy: 'ai', originChatId: need().getActiveChatId() });
+            dropUnusedNewParts(s, before);
+            save();
+            lastRacePrompt = '';
+            toastr['success'](`Created race "${race.name}".`, TITLE);
+            return;
+        } catch (err) {
+            // Name clash: reopen the editor with the user's edits so nothing is lost.
+            toastr['warning'](String(err.message || err), TITLE);
+            current = result;
+        }
+    }
 }
 
 /** Browse, add, edit, delete, import and export races. */
@@ -384,6 +495,7 @@ export async function openRaceCreator() {
 
     const $buttons = $('<div class="flex-container"></div>').append(
         textButton('fa-plus', 'New race').on('click', async () => { await editRace(); render(); }),
+        textButton('fa-wand-magic-sparkles', 'Generate from prompt').on('click', async () => { await createRaceFromPrompt(); render(); }),
         textButton('fa-file-import', 'Import').on('click', async () => {
             const text = await pickJsonFile();
             if (!text) return;
@@ -568,6 +680,14 @@ export function bindRaceSettingsUI(settings) {
         settings.raceReviewCharacterTags = !!$(this).prop('checked');
         save();
     });
+    $('#rpg_race_auto_assign').prop('checked', settings.raceAutoAssign !== false).off('change.rtRaces').on('change.rtRaces', function () {
+        settings.raceAutoAssign = !!$(this).prop('checked');
+        save();
+    });
+    $('#rpg_race_descriptions_in_context').prop('checked', settings.raceDescriptionsInContext !== false).off('change.rtRaces').on('change.rtRaces', function () {
+        settings.raceDescriptionsInContext = !!$(this).prop('checked');
+        save();
+    });
     $(document).off('click.rtRaces').on('click.rtRaces', '#rpg_open_part_creator', (e) => {
         e.preventDefault();
         openPartCreator();
@@ -587,6 +707,8 @@ export function syncRaceSettingsUI(settings) {
     $('#rpg_tag_prompt_suffix').val(settings.portraitTagSuffix ?? '');
     $('#rpg_race_creation_mode').val(settings.raceCreationMode || 'ask');
     $('#rpg_race_review_character_tags').prop('checked', !!settings.raceReviewCharacterTags);
+    $('#rpg_race_auto_assign').prop('checked', settings.raceAutoAssign !== false);
+    $('#rpg_race_descriptions_in_context').prop('checked', settings.raceDescriptionsInContext !== false);
 }
 
 /** Add Part Creator / Race Creator to SillyTavern's wand menu. */
