@@ -403,7 +403,7 @@
                             <div style="display: flex; align-items: center; gap: 8px; padding-left: 4px;">
                                 <label style="font-size: 0.82em; opacity: 0.75; white-space: nowrap;">Prompt builder
                                     <i class="fa-solid fa-circle-question interactable"
-                                        title="Prose: the portrait LLM writes a descriptive prompt (best for Flux / Pollinations). Danbooru tags: each character gets a race from the Race Creator plus character-specific body part tags, and the prompt is assembled from tags grouped by part (best for NovelAI and anime SD models). Race and part tags are only used for images and never reach the story."></i>
+                                        title="Prose: the portrait LLM writes a descriptive prompt (best for Flux / Pollinations). Danbooru tags: each character gets a race from the Race Creator plus character-specific body part tags, and the prompt is assembled from tags grouped by part (best for NovelAI and anime SD models). Race and part tags are only used for images and never reach the story. The portrait menu's AI Generate follows this setting; its Generate from Tags button always uses tags."></i>
                                 </label>
                                 <select id="rpg_portrait_prompt_mode" class="text_pole" style="font-size: 0.82em; padding: 2px 4px; height: 24px; flex: 1;">
                                     <option value="prose">Prose (LLM description)</option>
@@ -440,6 +440,12 @@
                                     <span>Add race descriptions to the story context</span>
                                     <i class="fa-solid fa-circle-question interactable"
                                         title="Each turn, the narrator gets a [RACES] block with the name and description of the races of the characters in the scene. Tags and parts are never sent to the story."></i>
+                                </label>
+                                <label class="checkbox_label">
+                                    <input id="rpg_race_tags_use_chat" type="checkbox" />
+                                    <span>Use recent chat for character tags</span>
+                                    <i class="fa-solid fa-circle-question interactable"
+                                        title="When the AI writes a character's part tags, and the equipment/state tags for each portrait, it also reads the last few chat messages (Portrait lookback count, default 5). Shared by all characters. Also in the Race &amp; Parts editor."></i>
                                 </label>
                                 <div style="display: flex; align-items: center; gap: 8px;">
                                     <label style="font-size: 0.82em; opacity: 0.75; white-space: nowrap;">New races

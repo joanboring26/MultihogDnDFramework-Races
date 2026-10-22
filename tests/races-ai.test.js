@@ -177,6 +177,28 @@ describe('real-model reply shapes', () => {
     });
 });
 
+describe('character tags context', () => {
+    it('passes the scene and the user prompt, and asks to stick to them', async () => {
+        const request = reply({ subject: '1girl', parts: [], equipment: '', state: '' });
+        await generateCharacterAppearance({
+            request, character, race: races[0], raceGroups: [], parts: makeDefaultAppearanceParts(),
+            scene: 'Recent Scene: Kaede loses a horn in the duel.', instructions: 'Burn scar on her right cheek.',
+        });
+        const user = request.mock.calls[0][1];
+        expect(user).toContain('CURRENT SCENE\nRecent Scene: Kaede loses a horn in the duel.');
+        expect(user).toContain('USER INSTRUCTIONS (follow these)\nBurn scar on her right cheek.');
+        expect(user).toContain('Do not invent features');
+    });
+
+    it('leaves the prompt sections out when not given', async () => {
+        const request = reply({ subject: '1girl', parts: [], equipment: '', state: '' });
+        await generateCharacterAppearance({ request, character, race: null, raceGroups: [], parts: makeDefaultAppearanceParts() });
+        const user = request.mock.calls[0][1];
+        expect(user).not.toContain('CURRENT SCENE');
+        expect(user).not.toContain('USER INSTRUCTIONS');
+    });
+});
+
 describe('race description', () => {
     it('uses the prompt and, when given, the parts and their tags', async () => {
         const request = reply({ description: 'Tall horned folk.' });

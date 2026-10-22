@@ -439,6 +439,9 @@ export function buildDefaultSettings() {
         /** Add the race name + description (never tags) of characters in the scene to the narrator context. */
         raceDescriptionsInContext: true,
 
+        /** Give the AI the recent chat when it writes character part tags and per-image equipment/state tags. */
+        raceTagsUseChat: true,
+
         /** Locked chrome for the floating settings window: 'dark' | 'light'. Independent of tracker/ST theme. */
         settingsOverlayAppearance: 'light',
 

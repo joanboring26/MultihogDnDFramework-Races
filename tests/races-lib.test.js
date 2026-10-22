@@ -12,6 +12,8 @@ import {
     getCharacterAppearance,
     importRacePack,
     isAppearanceRaceStale,
+    memoCharacterEntries,
+    memoPlayerName,
     movePart,
     partUsage,
     raceUsage,
@@ -198,5 +200,28 @@ describe('race packs', () => {
         expect(dest.races[0].generalParts.find(gp => gp.partId === 'tusks')?.tags).toBe('small tusks');
         expect(importRacePack(dest, pack).racesUpdated).toBe(1);
         expect(() => importRacePack(dest, { format: 'other' })).toThrow();
+    });
+});
+
+describe('memo character entries', () => {
+    const blocks = {
+        CHARACTER: 'Kaede Ironhorn (Barbarian): 34/34 HP\nCombat: AC 14 | Init +2\nGear: Kanabo, hide armor\nTraits: Mountain-born (Oni)',
+        PARTY: '- Ren (Monk): 22/22 HP\nGear: Quarterstaff, prayer beads\n- Mira (Cleric): 18/18 HP\nGear: Mace',
+        COMBAT: 'Combat Round 1\nGoblin 1: 7/7 HP | AC 13 | Scimitar\nGoblin 2: 7/7 HP | AC 13 | Shortbow',
+    };
+
+    it('returns the whole entry, not just the name line', () => {
+        expect(memoCharacterEntries(blocks, 'Kaede Ironhorn')).toEqual([{ tag: 'CHARACTER', text: 'Kaede Ironhorn (Barbarian): 34/34 HP\nCombat: AC 14 | Init +2\nGear: Kanabo, hide armor\nTraits: Mountain-born (Oni)' }]);
+        expect(memoCharacterEntries(blocks, 'Ren')).toEqual([{ tag: 'PARTY', text: '- Ren (Monk): 22/22 HP\nGear: Quarterstaff, prayer beads' }]);
+    });
+
+    it('numbered combatants match their archetype', () => {
+        expect(memoCharacterEntries(blocks, 'Goblin').map(e => e.text)).toEqual(['Goblin 1: 7/7 HP | AC 13 | Scimitar', 'Goblin 2: 7/7 HP | AC 13 | Shortbow']);
+        expect(memoCharacterEntries(blocks, 'Nobody')).toEqual([]);
+    });
+
+    it('finds the player name', () => {
+        expect(memoPlayerName(blocks)).toBe('Kaede Ironhorn (Barbarian)');
+        expect(memoPlayerName({})).toBe('');
     });
 });

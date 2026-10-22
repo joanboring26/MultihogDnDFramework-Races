@@ -25,6 +25,8 @@ import {
     findSimilarByName,
     getCharacterAppearance,
     getRaces,
+    memoCharacterEntries,
+    memoPlayerName,
     raceAssignableParts,
     setCharacterAppearance,
     sortedParts,
@@ -34,7 +36,8 @@ import { reviewAiRace, reviewCharacterAppearance } from '../../ui/races/race-man
 
 /** @typedef {(systemPrompt: string, userPrompt: string) => Promise<string>} RaceLlmRequest */
 
-const MAX_DESCRIPTION_CHARS = 3000;
+const MAX_DESCRIPTION_CHARS = 5000;
+const MAX_SCENE_CHARS = 6000;
 
 // Appearance passes run one at a time so two new characters of the same new
 // species cannot each create their own copy of the race.
@@ -79,26 +82,36 @@ export async function gatherCharacterDescription(name, { npcContent = null, chat
     const parts = [];
     const key = characterKey(name);
 
+    const live = chatId === getActiveChatId();
+    const blocks = s.currentMemo && live ? parseMemoBlocks(s.currentMemo) : {};
+
+    // The Player Card belongs to the player, whether it is looked up by the card's
+    // name or by the [CHARACTER] block name (the two can differ).
     const pc = s.chatStates?.[chatId]?.playerCharacter;
-    if (pc?.name && characterKey(pc.name) === key && pc.bio) parts.push(`Player character card:\n${pc.bio}`);
+    const isPlayer = pc?.bio && (characterKey(pc.name) === key || (memoPlayerName(blocks) && characterKey(memoPlayerName(blocks)) === key));
+    if (isPlayer) parts.push(`Player character card:\n${pc.bio}`);
 
     const card = npcContent ?? await loadNpcCardText(chatId, name);
     if (card) parts.push(`Character card:\n${cleanCardText(card)}`);
 
-    if (s.currentMemo && chatId === getActiveChatId()) {
-        const blocks = parseMemoBlocks(s.currentMemo);
-        const needle = archetypeName(name).toLowerCase();
-        for (const tag of ['CHARACTER', 'PARTY', 'COMBAT']) {
-            const lines = String(blocks[tag] || '').split('\n').filter(l => l.toLowerCase().includes(needle));
-            if (lines.length) parts.push(`[${tag}] state lines:\n${lines.join('\n')}`);
-        }
+    for (const entry of memoCharacterEntries(blocks, name)) {
+        parts.push(`[${entry.tag}] sheet:\n${entry.text}`);
     }
     return parts.join('\n\n').slice(0, MAX_DESCRIPTION_CHARS);
 }
 
-function sceneContext(s) {
-    if (!s.portraitUseStoryLookback) return '';
-    return buildPortraitStoryContext(SillyTavern.getContext(), portraitStoryLookbackCount(s), { maxChars: 3000, label: 'Recent Scene' });
+/**
+ * Recent chat for character tags and per-image equipment/state tags. Controlled by
+ * the shared "use recent chat" setting; keeps the newest messages when trimming.
+ * @param {any} s
+ * @param {boolean} [useChat]
+ */
+function sceneContext(s, useChat = s.raceTagsUseChat !== false) {
+    if (!useChat) return '';
+    const text = buildPortraitStoryContext(SillyTavern.getContext(), portraitStoryLookbackCount(s) || 5, { maxChars: Infinity, label: 'Recent Scene' });
+    if (text.length <= MAX_SCENE_CHARS) return text;
+    const header = text.slice(0, text.indexOf('\n') + 1);
+    return `${header}…${text.slice(-(MAX_SCENE_CHARS - header.length))}`;
 }
 
 /** Create AI-proposed parts and return plain { partId, tags, mode? } rows. */
@@ -187,6 +200,31 @@ export function ensureCharacterAppearance(name, opts) {
 }
 
 /**
+ * Character tags from the AI for the Race & Parts editor, without saving them.
+ * New parts come back as `{ newPart }` rows; the editor creates them.
+ * @param {string} name
+ * @param {{ request: RaceLlmRequest, raceId: string|null, instructions?: string, useChat?: boolean, npcContent?: string|null, chatId?: string }} opts
+ * @returns {Promise<{ subjectTags: string, parts: any[] }>}
+ */
+export async function draftCharacterAppearance(name, opts) {
+    const s = getSettings();
+    const chatId = opts.chatId || getActiveChatId();
+    if (!chatId) throw new Error('No active chat.');
+    const description = await gatherCharacterDescription(name, { npcContent: opts.npcContent ?? null, chatId });
+    const race = opts.raceId ? findRace(s, opts.raceId) : null;
+    const generated = await generateCharacterAppearance({
+        request: opts.request,
+        character: { name: archetypeName(name), description },
+        race,
+        raceGroups: characterPartGroups(s, { raceId: race?.id || null, parts: [] }),
+        parts: sortedParts(s),
+        scene: sceneContext(s, opts.useChat ?? s.raceTagsUseChat !== false),
+        instructions: opts.instructions || '',
+    });
+    return { subjectTags: generated.subject, parts: generated.parts };
+}
+
+/**
  * Build a tag-mode portrait prompt for a character.
  * @param {string} name
  * @param {{ request: RaceLlmRequest, npcContent?: string|null, chatId?: string, interactive?: boolean }} opts
@@ -203,13 +241,4 @@ export async function buildTagPortraitPrompt(name, opts) {
         state: current.state,
         style: s.portraitTagEmphasisStyle || 'novelai',
     }).prompt;
-}
-
-/**
- * Re-run the character parts step (e.g. after the race was edited), keeping the race.
- * @param {string} name
- * @param {{ request: RaceLlmRequest, npcContent?: string|null }} opts
- */
-export async function recheckCharacterAppearance(name, opts) {
-    await ensureCharacterAppearance(name, { ...opts, force: true });
 }

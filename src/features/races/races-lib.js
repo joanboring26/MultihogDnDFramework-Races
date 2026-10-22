@@ -358,6 +358,46 @@ export function archetypeName(name) {
     return base || clean;
 }
 
+const MEMO_HP_LINE = /^\s*(?:[-*+•–—]\s*)?(.+?):\s*[\d,]+(?:\/[\d,]+)?\s*HP/i;
+
+/**
+ * A character's full entry in the [CHARACTER] / [PARTY] / [COMBAT] memo blocks:
+ * the "Name: X/Y HP" line plus the lines under it (gear, abilities, status…),
+ * up to the next character's line.
+ * @param {Record<string, string>} blocks parsed memo blocks
+ * @param {string} name
+ * @returns {{ tag: string, text: string }[]}
+ */
+export function memoCharacterEntries(blocks, name) {
+    const keys = new Set([characterKey(name), characterKey(archetypeName(name))]);
+    const out = [];
+    for (const tag of ['CHARACTER', 'PARTY', 'COMBAT']) {
+        let current = null;
+        for (const line of String(blocks?.[tag] || '').split('\n')) {
+            const header = line.match(MEMO_HP_LINE);
+            if (header) {
+                const k = characterKey(header[1]);
+                current = keys.has(k) || keys.has(characterKey(archetypeName(header[1]))) ? [] : null;
+                if (current) out.push({ tag, text: '', lines: current });
+            }
+            if (current && line.trim()) current.push(line.trim());
+        }
+    }
+    return out.map(({ tag, lines }) => ({ tag, text: lines.join('\n') }));
+}
+
+/**
+ * Name on the first "Name: X/Y HP" line of the [CHARACTER] block (the player).
+ * @param {Record<string, string>} blocks
+ */
+export function memoPlayerName(blocks) {
+    for (const line of String(blocks?.CHARACTER || '').split('\n')) {
+        const m = line.match(MEMO_HP_LINE);
+        if (m) return m[1].trim();
+    }
+    return '';
+}
+
 /** @param {any} s @param {string} chatId @param {boolean} [create] */
 export function getAppearanceMap(s, chatId, create = false) {
     if (!chatId) return null;

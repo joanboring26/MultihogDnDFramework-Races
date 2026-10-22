@@ -178,10 +178,10 @@ Respond with ONLY: {"description": "..."}`);
  * Character-specific parts, subject tags and (first) equipment/state tags in one call.
  * @param {{ request: RaceLlmRequest, character: { name: string, description: string },
  *           race: any|null, raceGroups: { partId: string, name: string, tags: string[] }[],
- *           parts: any[], scene?: string }} args
+ *           parts: any[], scene?: string, instructions?: string }} args
  * @returns {Promise<{ subject: string, parts: { partId?: string, newPart?: { name: string, description: string }, tags: string, mode: 'add'|'replace' }[], equipment: string, state: string }>}
  */
-export async function generateCharacterAppearance({ request, character, race, raceGroups, parts, scene = '' }) {
+export async function generateCharacterAppearance({ request, character, race, raceGroups, parts, scene = '', instructions = '' }) {
     const raceText = race
         ? `Race: ${race.name}\n${race.description}\nRace tags every member already gets:\n${raceGroups.map(g => `- ${g.partId} (${g.name}): ${g.tags.join(', ')}`).join('\n') || '(none)'}`
         : 'Race: (none assigned)';
@@ -195,7 +195,9 @@ ${raceText}
 
 ALL PARTS
 ${partListBlock(parts.filter(p => p.kind !== 'subject'))}
-${scene ? `\nCURRENT SCENE\n${scene}\n` : ''}
+${scene ? `\nCURRENT SCENE\n${scene}\n` : ''}${instructions ? `\nUSER INSTRUCTIONS (follow these)\n${String(instructions).trim()}\n` : ''}
+Base every tag on what the CHARACTER text${scene ? ' and the scene' : ''} actually say${instructions ? ' and on the user instructions' : ''}. Do not invent features they don't mention.
+${instructions ? 'Every feature or tag the user instructions mention must appear on the matching part, keeping any emphasis exactly as written.\n' : ''}
 Instructions:
 1. subject: Danbooru subject tags for this character (e.g. "1girl", "1boy, mature male", "1other"). Do not add "solo" or framing tags.
 2. parts: ONLY where this character adds detail to, or differs from, the race tags (hair color and style, eye color, scars, a tail the base race lacks…). Do not repeat race tags. Skip parts that need nothing extra.

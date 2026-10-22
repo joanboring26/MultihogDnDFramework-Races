@@ -629,11 +629,13 @@ export function portraitLlmRequest(baseSettings) {
 
 /**
  * Tag-mode prompt: race + character parts + equipment/state as Danbooru tags.
+ * Also used directly by the portrait menu's "Generate from Tags", whatever the
+ * Prompt builder setting is.
  * @param {string} entityName
  * @param {string|null} npcContent lorebook card text, or null to look it up
  * @returns {Promise<string>}
  */
-async function generateTagPortraitPrompt(entityName, npcContent) {
+export async function generateTagPortraitPrompt(entityName, npcContent) {
     return buildTagPortraitPrompt(entityName, {
         request: portraitLlmRequest(getSettings()),
         npcContent,

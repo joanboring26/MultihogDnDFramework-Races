@@ -73,6 +73,21 @@ async function showPopup($content, opts = {}) {
     return result === 1;
 }
 
+/**
+ * Like showPopup, but with extra buttons. Returns the clicked button's result
+ * (custom results, or 1 for OK), or 0 when cancelled.
+ * @param {JQuery} $content
+ * @param {{ okButton?: string, cancelButton?: string, customButtons?: { text: string, result: number, classes?: string[] }[], large?: boolean }} opts
+ */
+async function showPopupResult($content, opts = {}) {
+    const ctx = SillyTavern.getContext();
+    const popupOpts = { wide: true, allowVerticalScrolling: true, ...opts };
+    const result = ctx.Popup && ctx.POPUP_TYPE
+        ? await new ctx.Popup($content, ctx.POPUP_TYPE.CONFIRM, '', popupOpts).show()
+        : await ctx.callGenericPopup($content, ctx.POPUP_TYPE?.CONFIRM ?? 1, '', popupOpts);
+    return typeof result === 'number' && result > 0 ? result : 0;
+}
+
 async function confirmPopup(title, body) {
     const $msg = $('<div></div>').append($('<h3></h3>').text(title));
     if (body) $msg.append($('<p></p>').text(body));
@@ -578,6 +593,12 @@ function appearanceForm(record) {
         textButton('fa-plus', 'Add part').on('click', () => addRow()),
         $('<small></small>').text(EMPHASIS_HINT),
     );
+    const set = (draft) => {
+        $subject.val(draft.subjectTags || '');
+        $rows.empty();
+        (draft.parts || []).forEach(addRow);
+        $el.trigger('change');
+    };
     const read = () => ({
         raceId: String($race.val()) || null,
         noRace: !String($race.val()),
@@ -588,7 +609,7 @@ function appearanceForm(record) {
             tags: normalizeTags(String($(row).find('textarea').val())),
         })),
     });
-    return { $el, read };
+    return { $el, read, set };
 }
 
 /**
@@ -604,9 +625,54 @@ export async function reviewCharacterAppearance(draft, characterName) {
 }
 
 /**
+ * "Generate character tags with AI" panel for the Race & Parts editor: an optional
+ * prompt, the shared "use recent chat" toggle, and a button that fills the form.
+ */
+function characterTagGenerator(name, form, generate) {
+    const s = need().getSettings();
+    const $wrap = $('<div class="rt-races-desc-ai"></div>');
+    const $toggle = textButton('fa-wand-magic-sparkles', 'Generate character tags with AI');
+    const $panel = $('<div class="rt-races-desc-ai-panel"></div>').hide();
+    const $prompt = $('<textarea class="text_pole textarea_compact" rows="2"></textarea>')
+        .attr('placeholder', 'Optional, e.g. She lost her left horn in a duel and has a burn scar across her right cheek.');
+    const $useChat = $('<input type="checkbox" />').prop('checked', s.raceTagsUseChat !== false).on('change', () => {
+        s.raceTagsUseChat = !!$useChat.prop('checked');
+        save();
+        $('#rpg_race_tags_use_chat').prop('checked', s.raceTagsUseChat);
+    });
+    const $go = textButton('fa-tags', 'Generate tags');
+    $toggle.on('click', () => $panel.toggle());
+    $go.on('click', async () => {
+        $go.addClass('disabled');
+        try {
+            const draft = await generate(name, {
+                raceId: form.read().raceId,
+                instructions: String($prompt.val()).trim(),
+                useChat: !!$useChat.prop('checked'),
+            });
+            form.set({ ...draft, parts: materializeParts(need().getSettings(), draft.parts) });
+            if (!draft.parts.length && !draft.subjectTags) toastr['warning']('The AI returned no tags. Try again or add a prompt.', TITLE);
+        } catch (err) {
+            console.error('[RPG Tracker] Character tag generation failed', err);
+            toastr['error'](`Couldn't generate tags: ${err.message || err}`, TITLE);
+        } finally {
+            $go.removeClass('disabled');
+        }
+    });
+    $panel.append(
+        $('<small></small>').text('Uses the character\'s card, Player Card and sheet, the race above, and (if ticked) the recent chat. Replaces the subject and part rows below; nothing is saved until you press Save.'),
+        '<label>Prompt for the AI (optional)</label>', $prompt,
+        $('<label class="checkbox_label"></label>').append($useChat, '<span>Use recent chat (shared by all characters)</span>'),
+        $go,
+    );
+    return $wrap.append($toggle, $panel);
+}
+
+/**
  * Edit a character's race and parts by hand (from the portrait menu).
  * @param {string} name
- * @param {{ recheck?: (name: string) => Promise<void> }} [opts]
+ * @param {{ generate?: (name: string, opts: { raceId: string|null, instructions: string, useChat: boolean }) => Promise<{ subjectTags: string, parts: any[] }>,
+ *           generateImage?: (name: string) => Promise<void> }} [opts]
  */
 export async function openCharacterAppearanceEditor(name, opts = {}) {
     const s = need().getSettings();
@@ -618,7 +684,8 @@ export async function openCharacterAppearanceEditor(name, opts = {}) {
     if (found && isAppearanceRaceStale(s, record)) {
         $content.append('<div class="rt-races-stale"><i class="fa-solid fa-triangle-exclamation"></i> The race was edited after these tags were written. Check that they still fit.</div>');
     }
-    if (!found) $content.append('<small>No race assigned yet. Pick one here, or it will be assigned by the AI at the next portrait (tag mode).</small>');
+    if (!found) $content.append('<small>No race assigned yet. Pick one here, or generate the tags with AI below.</small>');
+    const before = new Set(sortedParts(s).map(p => p.id));
     const form = appearanceForm(record);
     const $preview = $('<div class="rt-races-preview"></div>');
     const updatePreview = () => {
@@ -628,24 +695,24 @@ export async function openCharacterAppearanceEditor(name, opts = {}) {
     form.$el.on('input change', updatePreview);
     form.$el.on('click', '.menu_button', () => setTimeout(updatePreview, 0));
     updatePreview();
+    if (typeof opts.generate === 'function') $content.append(characterTagGenerator(name, form, opts.generate));
     $content.append(form.$el, '<label>Body tags preview (equipment and state are added per image)</label>', $preview);
-    if (typeof opts.recheck === 'function' && found) {
-        $content.append(textButton('fa-rotate', 'Re-check tags with AI').on('click', async (e) => {
-            $(e.currentTarget).addClass('disabled');
-            try {
-                await opts.recheck(name);
-                toastr['success']('Tags re-checked. Reopen this editor to see them.', TITLE);
-            } catch (err) {
-                toastr['error'](`Re-check failed: ${err.message || err}`, TITLE);
-            } finally {
-                $(e.currentTarget).removeClass('disabled');
-            }
-        }));
+
+    const GENERATE_IMAGE = 2;
+    const customButtons = typeof opts.generateImage === 'function'
+        ? [{ text: 'Save & Generate Image', result: GENERATE_IMAGE, classes: ['menu_button'] }]
+        : [];
+    const result = await showPopupResult($content, { okButton: 'Save', cancelButton: 'Cancel', customButtons, large: true });
+    if (!result) {
+        dropUnusedNewParts(s, before);
+        save();
+        return;
     }
-    if (!(await showPopup($content, { okButton: 'Save', cancelButton: 'Cancel', large: true }))) return;
     setCharacterAppearance(s, chatId, found?.record?.name || name, form.read());
+    dropUnusedNewParts(s, before);
     save();
     need().refresh?.();
+    if (result === GENERATE_IMAGE) await opts.generateImage(name);
 }
 
 // ── Settings panel + wand menu ───────────────────────────────────────────────
@@ -689,6 +756,10 @@ export function bindRaceSettingsUI(settings) {
         settings.raceDescriptionsInContext = !!$(this).prop('checked');
         save();
     });
+    $('#rpg_race_tags_use_chat').prop('checked', settings.raceTagsUseChat !== false).off('change.rtRaces').on('change.rtRaces', function () {
+        settings.raceTagsUseChat = !!$(this).prop('checked');
+        save();
+    });
     $(document).off('click.rtRaces').on('click.rtRaces', '#rpg_open_part_creator', (e) => {
         e.preventDefault();
         openPartCreator();
@@ -710,6 +781,7 @@ export function syncRaceSettingsUI(settings) {
     $('#rpg_race_review_character_tags').prop('checked', !!settings.raceReviewCharacterTags);
     $('#rpg_race_auto_assign').prop('checked', settings.raceAutoAssign !== false);
     $('#rpg_race_descriptions_in_context').prop('checked', settings.raceDescriptionsInContext !== false);
+    $('#rpg_race_tags_use_chat').prop('checked', settings.raceTagsUseChat !== false);
 }
 
 /** Add Part Creator / Race Creator to SillyTavern's wand menu. */
