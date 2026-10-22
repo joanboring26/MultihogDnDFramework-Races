@@ -28,7 +28,7 @@ import {
     updateRace,
 } from '../../features/races/races-lib.js';
 import { MAX_TAG_EMPHASIS, normalizeTags, parseJsonReply } from '../../features/races/tag-utils.js';
-import { generateRaceFromPrompt, generateRaceParts } from '../../features/races/races-ai.js';
+import { generateRaceDescription, generateRaceFromPrompt, generateRaceParts } from '../../features/races/races-ai.js';
 
 const TITLE = 'Races & Parts';
 const TAG_PLACEHOLDER = 'tag, {important tag}, 2::weighted tag::';
@@ -277,6 +277,44 @@ function materializeParts(s, rows) {
 }
 
 /**
+ * "Write description with AI" for the race editor: a prompt and, optionally,
+ * the general parts currently in the table. Fills the description field.
+ */
+function descriptionGenerator({ $name, $desc, table }) {
+    const $wrap = $('<div class="rt-races-desc-ai"></div>');
+    const $toggle = textButton('fa-wand-magic-sparkles', 'Write description with AI');
+    const $panel = $('<div class="rt-races-desc-ai-panel"></div>').hide();
+    const $prompt = $('<textarea class="text_pole textarea_compact" rows="2"></textarea>')
+        .attr('placeholder', 'e.g. Proud mountain dwellers, scarred and weathered. Mention their glowing eyes.');
+    const $useParts = $('<input type="checkbox" />').prop('checked', true);
+    const $go = textButton('fa-pen-nib', 'Generate description');
+    $toggle.on('click', () => $panel.toggle());
+    $go.on('click', async () => {
+        const s = need().getSettings();
+        const parts = $useParts.prop('checked')
+            ? table.read().filter(r => r.tags).map(r => ({ name: findPart(s, r.partId)?.name || r.partId, tags: r.tags }))
+            : null;
+        const prompt = String($prompt.val()).trim();
+        if (!prompt && !parts?.length) return toastr['warning']('Write a prompt, or add general parts with tags and tick "Use this race\'s parts".', TITLE);
+        $go.addClass('disabled');
+        try {
+            $desc.val(await generateRaceDescription({ request: need().request, prompt, name: String($name.val()).trim(), parts }));
+        } catch (err) {
+            console.error('[RPG Tracker] Race description generation failed', err);
+            toastr['error'](`Couldn't write the description: ${err.message || err}`, TITLE);
+        } finally {
+            $go.removeClass('disabled');
+        }
+    });
+    $panel.append(
+        '<label>Prompt for the AI (optional when using parts)</label>', $prompt,
+        $('<label class="checkbox_label"></label>').append($useParts, '<span>Use this race\'s parts and tags</span>'),
+        $go,
+    );
+    return $wrap.append($toggle, $panel);
+}
+
+/**
  * Race editor popup. Also used to review an AI-proposed race.
  * @param {{ id?: string, name: string, description: string, generalParts: { partId: string, tags: string }[] }} draft
  * @param {{ title?: string, okButton?: string }} [opts]
@@ -305,9 +343,10 @@ async function raceEditorPopup(draft, opts = {}) {
             $ai.removeClass('disabled');
         }
     });
+    const descAi = descriptionGenerator({ $name, $desc, table });
     $content.append(
         '<label>Name</label>', $name,
-        '<label>Description (visual, shared by all members)</label>', $desc,
+        '<label>Description (visual, shared by all members)</label>', $desc, descAi,
         '<label>General parts and their tags</label>', table.$el, $ai,
         $('<small></small>').text(EMPHASIS_HINT),
     );
@@ -641,6 +680,14 @@ export function bindRaceSettingsUI(settings) {
         settings.raceReviewCharacterTags = !!$(this).prop('checked');
         save();
     });
+    $('#rpg_race_auto_assign').prop('checked', settings.raceAutoAssign !== false).off('change.rtRaces').on('change.rtRaces', function () {
+        settings.raceAutoAssign = !!$(this).prop('checked');
+        save();
+    });
+    $('#rpg_race_descriptions_in_context').prop('checked', settings.raceDescriptionsInContext !== false).off('change.rtRaces').on('change.rtRaces', function () {
+        settings.raceDescriptionsInContext = !!$(this).prop('checked');
+        save();
+    });
     $(document).off('click.rtRaces').on('click.rtRaces', '#rpg_open_part_creator', (e) => {
         e.preventDefault();
         openPartCreator();
@@ -660,6 +707,8 @@ export function syncRaceSettingsUI(settings) {
     $('#rpg_tag_prompt_suffix').val(settings.portraitTagSuffix ?? '');
     $('#rpg_race_creation_mode').val(settings.raceCreationMode || 'ask');
     $('#rpg_race_review_character_tags').prop('checked', !!settings.raceReviewCharacterTags);
+    $('#rpg_race_auto_assign').prop('checked', settings.raceAutoAssign !== false);
+    $('#rpg_race_descriptions_in_context').prop('checked', settings.raceDescriptionsInContext !== false);
 }
 
 /** Add Part Creator / Race Creator to SillyTavern's wand menu. */

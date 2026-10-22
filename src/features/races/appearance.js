@@ -1,5 +1,5 @@
 /**
- * Race / parts pipeline for tag-mode portraits.
+ * Race / parts pipeline: tag-mode portraits and race auto-assignment (race-assign.js).
  *
  * ensureCharacterAppearance(): assign a race (creating one with the AI if needed)
  * and generate character-specific parts, stored per chat.

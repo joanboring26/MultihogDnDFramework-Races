@@ -433,6 +433,12 @@ export function buildDefaultSettings() {
         /** Show AI-generated character part tags for review before saving them. */
         raceReviewCharacterTags: false,
 
+        /** Give every character a race when they appear, not only at their first tag-mode portrait. */
+        raceAutoAssign: true,
+
+        /** Add the race name + description (never tags) of characters in the scene to the narrator context. */
+        raceDescriptionsInContext: true,
+
         /** Locked chrome for the floating settings window: 'dark' | 'light'. Independent of tracker/ST theme. */
         settingsOverlayAppearance: 'light',
 

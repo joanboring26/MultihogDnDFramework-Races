@@ -16,6 +16,7 @@ import { getSettings, hydrateWorldProgressionFromChatState, persistWorldProgress
 import { syncCombatProfile, isCombatActive } from './llm-client.js';
 import { parseQuestsFromMemo, extractCurrentTimeStr, cleanMessageContent, formatInWorldTime, memoForGmContext, stripPromptInjectionsFromUserText, stripCyoaAndPacingInjections, mergeMemo, applyQuestSyncAndStripMemo, computeDelta } from './memo-processor.js';
 import { parseMemoBlocks } from './renderer.js';
+import { buildRaceContextBlock, memoCharacterNames } from './src/features/races/race-context.js';
 import { runRouterPass, saveSceneToLorebook, scanAssistantOutputForKeywords, parseInWorldMinutes, runWorldProgressionPass, updateLorebookEntry, getLorebookManifest, rollbackRouterPass, isRouterRunning, syncDungeonMapsToLocationLorebook, captureActiveDungeonMapHistory } from './router.js';
 import { getActiveMapUpdaterSiteRoot, maybeRollbackMapUpdaterForSwipe, runMapUpdaterPass, shouldForceBuildingPopulationPass, stopMapUpdaterPass } from './map-updater.js';
 import { maybeRollbackMapEvolutionForSwipe, maybeRunMapEvolution, stopMapEvolutionPass } from './map-evolution.js';
@@ -1120,7 +1121,7 @@ function findLatestPlayerInputText(chat) {
  * Formats a lorebook entry block for injection into the GM/narrator prompt.
  * Automatically prepends any active NPC relationship status values if relationship bars are enabled.
  */
-function buildInjectedEntryText(id, entry, settings) {
+function buildInjectedEntryText(id, entry, settings, injectedNames = null) {
     let content = stripCoreMarkersForNarrator(substituteLoreMacros(entry.content || ''));
     const rel = settings.npcRelationshipValues?.[id];
     if (rel && settings.npcRelationshipBars) {
@@ -1130,6 +1131,7 @@ function buildInjectedEntryText(id, entry, settings) {
         content = substituteLoreMacros(`Relationship with {{user}}: Friendship: ${friendship}/${relMax}, Affection: ${affection}/${relMax}\n${content}`);
     }
 const label = entry.key?.[0] || entry.comment || id.split('::')[1];
+    if (injectedNames) injectedNames.push(entry.comment || label);
     return `### [${label}]\n${content}\n\n`;
 }
 
@@ -1404,6 +1406,8 @@ export function installInterceptor() {
         let injections = "";     // core: pacing + CYOA + RNG + State Memo + Quests → user msg
         let loreInjections = ""; // lore: keyword/agent entries (configurable depth)
         let wpInjections = "";   // world progression reports (configurable depth)
+        let raceBlockAt = -1;    // [RACES] goes after [PLAYER_CHARACTER], once lore names are known
+        const loreNames = [];    // characters whose lore cards are injected this turn
         const dungeonInjections = dungeonInjection;
         
         if (settings.debugMode) {
@@ -1424,6 +1428,7 @@ export function installInterceptor() {
                     injections += `[PLAYER_CHARACTER]\nName: ${pc.name}\n${pc.bio}\n[/PLAYER_CHARACTER]\n\n`;
                     if (settings.debugMode) console.log("Player Character injected.");
                 }
+                raceBlockAt = injections.length;
 
                 // [NPC_RELATIONS] — before pacing/CYOA/RNG.
                 const relBlock = chatCommitResult(ownsChat, await buildNpcRelationsBlock(settings));
@@ -1539,7 +1544,7 @@ export function installInterceptor() {
                             if (!bookCache[bookName]) bookCache[bookName] = chatCommitResult(ownsChat, await ctx.loadWorldInfo(bookName));
                             const entry = bookCache[bookName]?.entries?.[uid];
                             if (entry?.content) {
-                                loreBlock += buildInjectedEntryText(id, entry, settings);
+                                loreBlock += buildInjectedEntryText(id, entry, settings, loreNames);
                             }
                         }
                         if (loreBlock) {
@@ -1565,7 +1570,7 @@ export function installInterceptor() {
                             if (!bookCache[bookName]) bookCache[bookName] = chatCommitResult(ownsChat, await ctx.loadWorldInfo(bookName));
                             const entry = bookCache[bookName]?.entries?.[uid];
                             if (entry?.content) {
-                                persistBlock += buildInjectedEntryText(id, entry, settings);
+                                persistBlock += buildInjectedEntryText(id, entry, settings, loreNames);
                             }
                         }
                         if (persistBlock) {
@@ -1601,7 +1606,7 @@ export function installInterceptor() {
                         if (!bookCache[bookName]) bookCache[bookName] = chatCommitResult(ownsChat, await ctx.loadWorldInfo(bookName));
                         const entry = bookCache[bookName]?.entries?.[uid];
                         if (entry?.content) {
-                            agentBlock += buildInjectedEntryText(id, entry, settings);
+                            agentBlock += buildInjectedEntryText(id, entry, settings, loreNames);
                         }
                     }
                     if (agentBlock) {
@@ -1641,6 +1646,18 @@ export function installInterceptor() {
                     console.warn('[RPG Tracker] World progression injection failed:', e);
                 }
             }
+        }
+
+        // [RACES] — race names + descriptions (never tags) for the characters in this turn's context.
+        if (raceBlockAt >= 0 && settings.raceDescriptionsInContext !== false) {
+            const curChatId = SillyTavern.getContext().chatId || globalThis._rpgCurrentChatId?.();
+            const names = [
+                settings.chatStates?.[curChatId]?.playerCharacter?.name,
+                ...memoCharacterNames(parseMemoBlocks(settings.currentMemo || '')),
+                ...loreNames,
+            ].filter(Boolean);
+            const raceBlock = curChatId ? buildRaceContextBlock(settings, curChatId, names) : '';
+            if (raceBlock) injections = injections.slice(0, raceBlockAt) + raceBlock + injections.slice(raceBlockAt);
         }
 
         if (settings.debugMode) console.groupEnd();

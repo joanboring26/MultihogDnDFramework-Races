@@ -8,12 +8,14 @@ All notable changes to the **Multihog D&D Framework** will be documented in this
 - **Races & Parts (Danbooru tag portraits).** New "Prompt builder" setting under Portraits: *Danbooru tags* builds portrait prompts from a race library instead of an LLM-written description. Best with NovelAI and anime SD models.
   - **Part Creator**: a global database of body parts (Height, Build, Skin, Head, Ears, Eyes, Hair, Horns, Arms, Tail, Wings…), reorderable to set prompt order, with AI help for new parts.
   - **Race Creator**: races with a visual description and *general parts*, each with tags shared by every member. Import/export as `.mraces.json`.
+  - **Write description with AI** in the race editor: writes the race description from a prompt and, optionally, the race's general parts and tags.
   - **Generate from prompt** in the Race Creator: describe a race or give instructions, and the AI drafts the name, description, general parts and tags for review. It reuses existing parts instead of creating near-duplicates ("Horn" vs "Horns"), and merges repeated rows for the same part.
-  - Characters (player, party, enemies, lorebook NPCs) are assigned a race by the AI at their first tag-mode portrait. When none fits, the AI drafts a new race (name, description, then parts and tags) for review, or creates it automatically, or never, per setting.
+  - Characters (player, party, enemies, lorebook NPCs) are assigned a race by the AI as soon as they appear, with or without a portrait (setting *Give every character a race when they appear*, on by default), or otherwise at their first tag-mode portrait. When none fits, the AI drafts a new race (name, description, then parts and tags) for review, or creates it automatically, or never, per setting.
   - Character-specific parts layer on top of the race: add tags, drop one race tag with `-tag`, or replace a part's race tags. Characters may have parts their race lacks.
   - Final prompt: prefix, subject tags, part tags grouped per part (race + character), current equipment and state, suffix. Emphasis is written for NovelAI, Stable Diffusion, or stripped.
   - Numbered combatants ("Goblin 2") share one appearance; renames carry the race along; race edits flag linked characters for a re-check. A "Race & Parts" button in the portrait menu edits a character by hand.
-  - Race and part tags are image-only and never reach story generation.
+  - **Race descriptions in the story**: each turn the narrator gets a `[RACES]` block with the name and description of the races of the characters in the scene (player, party, combatants, active NPC cards). Can be turned off.
+  - Race and part tags, parts and part descriptions are image-only and never reach story generation.
 
 ### Fixed
 - ST Image Generation backend now calls `/imagine` directly instead of through the slash-command parser, so `{tag}` emphasis is no longer treated as a macro.

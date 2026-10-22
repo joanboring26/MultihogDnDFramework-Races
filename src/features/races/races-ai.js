@@ -144,6 +144,29 @@ Respond with ONLY: {"name": "...", "description": "..."}`);
 }
 
 /**
+ * Race editor "Write description with AI": one visual paragraph from the user's
+ * prompt and, optionally, the race's general parts and their tags.
+ * @param {{ request: RaceLlmRequest, prompt: string, name?: string, parts?: { name: string, tags: string }[] | null }} args
+ * @returns {Promise<string>}
+ */
+export async function generateRaceDescription({ request, prompt, name = '', parts = null }) {
+    const instructions = String(prompt || '').trim();
+    const partLines = (parts || []).filter(p => p?.name).map(p => `- ${p.name}: ${String(p.tags || '').trim() || '(no tags)'}`);
+    if (!instructions && !partLines.length) throw new Error('Write a prompt or include the race\'s parts.');
+    const parsed = await requestJson(request, `Write the description of a race/species for a fantasy roleplay.
+
+${name ? `RACE NAME\n${name}\n\n` : ''}${instructions ? `USER INSTRUCTIONS\n${instructions}\n\n` : ''}${partLines.length ? `GENERAL PARTS (tags every member has; turn them into natural prose, do not list tags)\n${partLines.join('\n')}\n\n` : ''}Rules:
+- One short paragraph (2 to 4 sentences) describing what members of this race commonly look like: size, build, skin, distinctive features.
+- Plain prose, no Danbooru tags, no emphasis syntax, no lists.
+- Visual traits only; mention habits or lore only if the user asks for them.
+
+Respond with ONLY: {"description": "..."}`);
+    const description = String(parsed.description || '').trim();
+    if (!description) throw new Error('The AI did not return a description.');
+    return description;
+}
+
+/**
  * Character-specific parts, subject tags and (first) equipment/state tags in one call.
  * @param {{ request: RaceLlmRequest, character: { name: string, description: string },
  *           race: any|null, raceGroups: { partId: string, name: string, tags: string[] }[],
