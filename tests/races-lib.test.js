@@ -76,6 +76,10 @@ describe('tag utils', () => {
     it('parses JSON out of chatty replies', () => {
         expect(parseJsonReply('Sure!\n```json\n{"a": 1}\n```')).toEqual({ a: 1 });
         expect(parseJsonReply('nope')).toBeNull();
+        expect(parseJsonReply('<think>maybe {"parts": []}?</think>\n{"parts": [1]}')).toEqual({ parts: [1] });
+        expect(parseJsonReply('{"parts": [{"partId": "horns", "tags": "a",},],}')).toEqual({ parts: [{ partId: 'horns', tags: 'a' }] });
+        expect(parseJsonReply('Use {curly} tags. Answer: {"parts": [{"partId": "tail", "tags": "{big tail}"}]} Done {x}.'))
+            .toEqual({ parts: [{ partId: 'tail', tags: '{big tail}' }] });
     });
 });
 

@@ -190,18 +190,50 @@ export function underscoresToSpaces(text) {
 }
 
 /**
- * Pull the first JSON object out of an LLM reply (code fences and chatter tolerated).
+ * Pull the JSON object out of an LLM reply. Tolerates code fences, chatter
+ * around the JSON, reasoning blocks (<think>…</think>) and trailing commas.
  * @param {string} reply
  * @returns {any|null}
  */
 export function parseJsonReply(reply) {
-    const text = String(reply ?? '').replace(/```(?:json)?/gi, '');
+    const text = String(reply ?? '')
+        .replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>/gi, '')
+        .replace(/```(?:json)?/gi, '');
+    const tryParse = (slice) => {
+        for (const candidate of [slice, slice.replace(/,\s*([}\]])/g, '$1')]) {
+            try {
+                return JSON.parse(candidate);
+            } catch { /* try the next form */ }
+        }
+        return null;
+    };
     const start = text.indexOf('{');
     const end = text.lastIndexOf('}');
     if (start === -1 || end <= start) return null;
-    try {
-        return JSON.parse(text.slice(start, end + 1));
-    } catch {
-        return null;
+    const whole = tryParse(text.slice(start, end + 1));
+    if (whole !== null) return whole;
+    // Chatter containing braces: try each balanced {...} block; the largest that parses wins.
+    let best = null;
+    let bestLength = 0;
+    for (let i = start; i !== -1; i = text.indexOf('{', i + 1)) {
+        let depth = 0;
+        let inString = false;
+        for (let j = i; j < text.length; j++) {
+            const ch = text[j];
+            if (inString) {
+                if (ch === '\\') j++;
+                else if (ch === '"') inString = false;
+            } else if (ch === '"') inString = true;
+            else if (ch === '{') depth++;
+            else if (ch === '}' && --depth === 0) {
+                const parsed = tryParse(text.slice(i, j + 1));
+                if (parsed !== null && typeof parsed === 'object' && j + 1 - i > bestLength) {
+                    best = parsed;
+                    bestLength = j + 1 - i;
+                }
+                break;
+            }
+        }
     }
+    return best;
 }

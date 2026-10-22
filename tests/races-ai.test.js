@@ -115,6 +115,68 @@ describe('race from a prompt', () => {
     });
 });
 
+describe('real-model reply shapes', () => {
+    const parts = makeDefaultAppearanceParts();
+    const race = { name: 'Kitsune', description: 'Fox people.' };
+    const run = (reply) => generateRaceParts({ request: vi.fn(async () => reply), race, parts });
+
+    it('accepts other key names, tag arrays and "Name (id)" references', async () => {
+        const out = await run(JSON.stringify({ generalParts: [
+            { part: 'Horns', tags: 'long horns' },
+            { id: 'ears', tags: ['fox ears', 'animal ears'] },
+            { name: 'Tail', tag: 'fox tail' },
+            { partId: 'Eyes (eyes)', tags: 'amber eyes' },
+        ] }));
+        expect(out.parts).toEqual([
+            { partId: 'horns', tags: 'long horns' },
+            { partId: 'ears', tags: 'fox ears, animal ears' },
+            { partId: 'tail', tags: 'fox tail' },
+            { partId: 'eyes', tags: 'amber eyes' },
+        ]);
+    });
+
+    it('accepts an object map of parts', async () => {
+        const out = await run('{"parts": {"horns": "long horns", "tail": ["fox tail"], "fur": {"description": "Body fur.", "tags": "white fur"}}}');
+        expect(out.parts).toEqual([
+            { partId: 'horns', tags: 'long horns' },
+            { partId: 'tail', tags: 'fox tail' },
+            { newPart: { name: 'Fur', description: 'Body fur.' }, tags: 'white fur' },
+        ]);
+    });
+
+    it('turns an unknown part id into a new part instead of dropping it', async () => {
+        const out = await run('{"parts": [{"partId": "fur", "tags": "white fur"}, {"partId": "body_markings", "tags": "stripes"}, {"partId": "subject", "tags": "1girl"}]}');
+        expect(out.parts).toEqual([
+            { newPart: { name: 'Fur', description: '' }, tags: 'white fur' },
+            { newPart: { name: 'Body Markings', description: '' }, tags: 'stripes' },
+        ]);
+    });
+
+    it('retries once when the reply has no usable parts', async () => {
+        const request = vi.fn()
+            .mockResolvedValueOnce('{"parts": [{"partId": "horns"}]}')
+            .mockResolvedValueOnce('{"parts": [{"partId": "horns", "tags": "long horns"}]}');
+        const out = await generateRaceParts({ request, race, parts });
+        expect(out.parts).toEqual([{ partId: 'horns', tags: 'long horns' }]);
+        expect(request).toHaveBeenCalledTimes(2);
+        expect(request.mock.calls[1][1]).toContain('no usable parts');
+    });
+
+    it('tells the AI to keep the user\'s tags when there are instructions', async () => {
+        const request = vi.fn(async () => '{"parts": [{"partId": "horns", "tags": "2::two horns::"}]}');
+        await generateRaceParts({ request, race, parts, instructions: 'Horns: 2::two horns::' });
+        expect(request.mock.calls[0][1]).toContain('Every feature or tag the user instructions mention');
+    });
+
+    it('character replies still need an explicit newPart for new parts', async () => {
+        const out = await generateCharacterAppearance({
+            request: reply({ subject: '1girl', parts: [{ partId: 'clothing', tags: 'kimono' }, { id: 'hair', tags: 'white hair' }], equipment: '', state: '' }),
+            character, race: null, raceGroups: [], parts,
+        });
+        expect(out.parts).toEqual([{ partId: 'hair', tags: 'white hair', mode: 'add' }]);
+    });
+});
+
 describe('race description', () => {
     it('uses the prompt and, when given, the parts and their tags', async () => {
         const request = reply({ description: 'Tall horned folk.' });

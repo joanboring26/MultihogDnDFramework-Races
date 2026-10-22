@@ -420,6 +420,7 @@ async function createRaceFromPrompt() {
         toastr.clear($toast);
     }
 
+    if (!draft.generalParts.length) toastr['warning']('The AI returned no usable parts or tags. Use "Suggest general parts with AI" in the editor, or add them by hand.', TITLE);
     const newParts = draft.generalParts.filter(gp => !gp.partId).map(gp => gp.newPart.name);
     // New parts must exist for the table's dropdowns; unused ones are removed again on cancel.
     const before = new Set(sortedParts(s).map(p => p.id));
