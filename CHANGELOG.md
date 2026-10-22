@@ -14,6 +14,9 @@ All notable changes to the **Multihog D&D Framework** will be documented in this
   - Character-specific parts layer on top of the race: add tags, drop one race tag with `-tag`, or replace a part's race tags. Characters may have parts their race lacks.
   - Final prompt: prefix, subject tags, part tags grouped per part (race + character), current equipment and state, suffix. Emphasis is written for NovelAI, Stable Diffusion, or stripped.
   - Numbered combatants ("Goblin 2") share one appearance; renames carry the race along; race edits flag linked characters for a re-check. A "Race & Parts" button in the portrait menu edits a character by hand.
+  - **Generate from Tags** in the portrait menu builds the image prompt from the race and character parts even when the Prompt builder is set to Prose. The Race & Parts editor has **Save & Generate Image** too.
+  - **Generate character tags with AI** in the Race & Parts editor, with an optional prompt and a shared *Use recent chat for character tags* toggle (also in settings; on by default, replaces the portrait lookback switch for tag mode).
+  - Character tags now see the character's whole sheet entry (gear, abilities, traits), not just the name line, and the Player Card is found even when its name differs from the [CHARACTER] name.
   - **Race descriptions in the story**: each turn the narrator gets a `[RACES]` block with the name and description of the races of the characters in the scene (player, party, combatants, active NPC cards). Can be turned off.
   - Race and part tags, parts and part descriptions are image-only and never reach story generation.
 

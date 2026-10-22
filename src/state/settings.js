@@ -1533,6 +1533,7 @@ export const CHAT_STATE_GLOBAL_UI_KEYS = [
     'raceReviewCharacterTags',
     'raceAutoAssign',
     'raceDescriptionsInContext',
+    'raceTagsUseChat',
     'portraitSkipPromptDialog',
     'hideImageGenToasts',
     'portraitUseStoryLookback',

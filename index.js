@@ -16,7 +16,7 @@ import { isMapUpdaterRunning, onMapUpdaterUserMessage, runMapUpdaterPass, stopMa
 import { isMapEvolutionRunning, listMappedEvolutionSites, loadMappedEvolutionSite, runMapEvolutionPass, stopMapEvolutionPass } from './map-evolution.js';
 import { summarizeMapEvolutionSchedule, stampEvolutionLastFired, evolutionIntervalHoursForSettings, setSiteEvolutionIntervalOverride, getSiteEvolutionIntervalOverride, normalizeMapEvolutionNarratorCommitTokens } from './map-evolution-lib.js';
 import { getRequestHeaders } from '../../../../script.js';
-import { fileToDataUrl, scaleImageTo512Square, scaleImageToLandscape, applyPortraitData, applyLocationImageData, renamePortraitEntity, reconcileMemoPortraitRenames, generatePortraitPrompt, generateNpcPortraitPrompt, generateLocationImagePrompt, showPortraitPromptPopup, generatePortraitDirect, autoGeneratePartyPortraits, removeAllPortraits, checkAndTriggerAutoGenerations, autoGenerateEnemyPortraits, forceCheckAutoGenerations, resetAutoGenerationTracking, resetRealtimeLocationGenerationFailure, stopRealtimeLocationGeneration, resolveLocationImageWithMeta, normalizeLocationPath, buildLocationPath, getLinkedPlayerCharacter, resolvePortraitSrcForPlayerCharacter, imageGenToast, triggerBackgroundPortraitGeneration, fetchHordeModels, portraitLlmRequest } from './portraits.js';
+import { fileToDataUrl, scaleImageTo512Square, scaleImageToLandscape, applyPortraitData, applyLocationImageData, renamePortraitEntity, reconcileMemoPortraitRenames, generatePortraitPrompt, generateNpcPortraitPrompt, generateLocationImagePrompt, showPortraitPromptPopup, generatePortraitDirect, autoGeneratePartyPortraits, removeAllPortraits, checkAndTriggerAutoGenerations, autoGenerateEnemyPortraits, forceCheckAutoGenerations, resetAutoGenerationTracking, resetRealtimeLocationGenerationFailure, stopRealtimeLocationGeneration, resolveLocationImageWithMeta, normalizeLocationPath, buildLocationPath, getLinkedPlayerCharacter, resolvePortraitSrcForPlayerCharacter, imageGenToast, triggerBackgroundPortraitGeneration, fetchHordeModels, portraitLlmRequest, generateTagPortraitPrompt } from './portraits.js';
 import { buildImmersionSceneState, renderImmersionViewHtml, getCurrentLocationText, loadLocationEntryByPath, loadNpcEntryByKey, maybeAutoGenerateImmersionSceneArt, runRealtimeSceneArtCheck, resetImmersionSceneArtTracking, hydrateImmersionSceneArtPath } from './immersion.js';
 import { migrateAllEmbeddedPortraits, countEmbeddedPortraitDataUrls, purgeAllPortraitData, resolvePortraitDisplaySrc, lookupCustomPortraitSrc, collectAllPortraitRefs, countPortraitPathRefs, deletePortraitFile, isManagedPortraitPath, isPortraitMigrationLocked, setPortraitMigrationLocked, PORTRAIT_STORAGE_FOLDER, snapshotPortraitMapsForChat, loadPortraitMapsForChat, migrateLegacyPortraitMapsToChat } from './portrait-storage.js';
 import { loadPanelGeometry, loadDeltaHeight, makeDraggable, makeResizableTR, makeResizableBR, makeResizableBL, setupResizeObserver, setupDeltaResize, canResizePanels, jqueryToggleSlide, resolveViewportClampedGeometry, clampFloatingPanelToViewport } from './ui-geometry.js';
@@ -46,7 +46,7 @@ import {
 } from './npc-library.js';
 import { RENDERING_TAGS_LIBRARY, sectionPages, configureRuntimeActions } from './src/app/runtime-bridge.js';
 import { addRaceWandButtons, bindRaceSettingsUI, configureRaceManager, openCharacterAppearanceEditor } from './src/ui/races/race-manager.js';
-import { recheckCharacterAppearance } from './src/features/races/appearance.js';
+import { draftCharacterAppearance } from './src/features/races/appearance.js';
 import { autoAssignRaces } from './src/features/races/race-assign.js';
 import { bindRenderedCardEvents } from './src/ui/panel/card-events.js';
 import { createDetachedPanel } from './src/ui/panel/detached-panel.js';
@@ -4587,6 +4587,10 @@ async function showPortraitSettingsMenu(entityName, onRefresh, npcContent = null
         popupOpts.customButtons.push({ text: '🗑 Clear Portrait', result: 2, classes: ['menu_button'] });
     }
     if (s.portraitPromptMode === 'tags' || s.raceAutoAssign !== false) {
+        // "AI Generate" follows the Prompt builder setting; this one always uses race + character tags.
+        if (s.portraitPromptMode !== 'tags') {
+            popupOpts.customButtons.push({ text: '🏷️ Generate from Tags', result: 7, classes: ['menu_button'] });
+        }
         popupOpts.customButtons.push({ text: '🧬 Race & Parts', result: 6, classes: ['menu_button'] });
     }
 
@@ -4909,10 +4913,44 @@ async function showPortraitSettingsMenu(entityName, onRefresh, npcContent = null
 
     document.removeEventListener('paste', popupPasteHandler);
 
+    /** Build a prompt, then generate (auto-apply) or show the editable prompt dialog. */
+    const runAiPortrait = async (buildPrompt) => {
+        try {
+            if (s.portraitSkipPromptDialog) {
+                imageGenToast('info', `Generating portrait for ${entityName} in background…`, 'RPG Tracker');
+                const aiPrompt = await buildPrompt();
+                if (!aiPrompt) {
+                    toastr['warning']('Could not generate prompt — no context found.', 'RPG Tracker');
+                    return;
+                }
+                imageGenToast('info', `Generating image for ${entityName}…`, 'RPG Tracker');
+                const dataUrl = await generatePortraitDirect(aiPrompt, entityName);
+                const scaled = await scaleImageTo512Square(dataUrl);
+                await localApply(scaled);
+                imageGenToast('success', `Portrait auto-generated and applied for ${entityName}!`, 'RPG Tracker');
+            } else {
+                imageGenToast('info', 'Generating portrait prompt…', 'RPG Tracker');
+                const aiPrompt = await buildPrompt();
+                if (aiPrompt) {
+                    await showPortraitPromptPopup(aiPrompt, entityName, localApply, refresh);
+                } else {
+                    toastr['warning']('Could not generate prompt — no context found.', 'RPG Tracker');
+                }
+            }
+        } catch (err) {
+            console.error('[RPG Tracker] AI portrait error:', err);
+            toastr['error']('AI portrait generation failed: ' + (err.message || err), 'RPG Tracker');
+        }
+    };
+    const tagPrompt = () => generateTagPortraitPrompt(entityName, npcContent);
+
     if (result === 6) {
         await openCharacterAppearanceEditor(entityName, {
-            recheck: (name) => recheckCharacterAppearance(name, { request: portraitLlmRequest(getSettings()), npcContent }),
+            generate: (name, opts) => draftCharacterAppearance(name, { ...opts, request: portraitLlmRequest(getSettings()), npcContent }),
+            generateImage: () => runAiPortrait(tagPrompt),
         });
+    } else if (result === 7) {
+        await runAiPortrait(tagPrompt);
     } else if (result === 2) {
         await localApply(null);
     } else if (result === 5) {
@@ -4932,36 +4970,9 @@ async function showPortraitSettingsMenu(entityName, onRefresh, npcContent = null
             toastr['warning']('Could not crop existing image.', 'RPG Tracker');
         }
     } else if (result === 4) {
-        try {
-            if (s.portraitSkipPromptDialog) {
-                imageGenToast('info', `Generating portrait for ${entityName} in background…`, 'RPG Tracker');
-                const aiPrompt = npcContent !== null
-                    ? await generateNpcPortraitPrompt(entityName, npcContent)
-                    : await generatePortraitPrompt(entityName);
-                if (!aiPrompt) {
-                    toastr['warning']('Could not generate prompt — no context found.', 'RPG Tracker');
-                    return;
-                }
-                imageGenToast('info', `Generating image for ${entityName}…`, 'RPG Tracker');
-                const dataUrl = await generatePortraitDirect(aiPrompt, entityName);
-                const scaled = await scaleImageTo512Square(dataUrl);
-                await localApply(scaled);
-                imageGenToast('success', `Portrait auto-generated and applied for ${entityName}!`, 'RPG Tracker');
-            } else {
-                imageGenToast('info', 'Generating portrait prompt…', 'RPG Tracker');
-                const aiPrompt = npcContent !== null
-                    ? await generateNpcPortraitPrompt(entityName, npcContent)
-                    : await generatePortraitPrompt(entityName);
-                if (aiPrompt) {
-                    await showPortraitPromptPopup(aiPrompt, entityName, localApply, refresh);
-                } else {
-                    toastr['warning']('Could not generate prompt — no context found.', 'RPG Tracker');
-                }
-            }
-        } catch (err) {
-            console.error('[RPG Tracker] AI portrait error:', err);
-            toastr['error']('AI portrait generation failed: ' + (err.message || err), 'RPG Tracker');
-        }
+        await runAiPortrait(() => (npcContent !== null
+            ? generateNpcPortraitPrompt(entityName, npcContent)
+            : generatePortraitPrompt(entityName)));
     } else if (result) {
         if (capturedRawUrl) {
             try {
