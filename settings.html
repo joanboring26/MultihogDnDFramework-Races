@@ -403,7 +403,7 @@
                             <div style="display: flex; align-items: center; gap: 8px; padding-left: 4px;">
                                 <label style="font-size: 0.82em; opacity: 0.75; white-space: nowrap;">Prompt builder
                                     <i class="fa-solid fa-circle-question interactable"
-                                        title="Prose: the portrait LLM writes a descriptive prompt (best for Flux / Pollinations). Danbooru tags: each character gets a race from the Race Creator plus character-specific body part tags, and the prompt is assembled from tags grouped by part (best for NovelAI and anime SD models). Race and part tags are only used for images and never reach the story. The portrait menu's AI Generate follows this setting; its Generate from Tags button always uses tags."></i>
+                                        title="Prose: the portrait LLM writes a descriptive prompt (best for Flux / Pollinations). Danbooru tags: each character gets a race from the Race Creator plus character-specific body part tags, and the prompt is assembled from tags grouped by part (best for NovelAI and anime SD models). Race and part tags are only used for images and never reach the story. The portrait menu's AI Generate follows this setting; its Generate from Tags button always uses tags. While &quot;Give every character a race&quot; is on, automatic portraits (a character's first portrait) also use tags, so they show the character's race."></i>
                                 </label>
                                 <select id="rpg_portrait_prompt_mode" class="text_pole" style="font-size: 0.82em; padding: 2px 4px; height: 24px; flex: 1;">
                                     <option value="prose">Prose (LLM description)</option>
@@ -433,7 +433,7 @@
                                     <input id="rpg_race_auto_assign" type="checkbox" />
                                     <span>Give every character a race when they appear</span>
                                     <i class="fa-solid fa-circle-question interactable"
-                                        title="The player, party members, combatants and lorebook NPCs get a race (and character part tags) as soon as they appear, whether or not they have a portrait. Off: races are only assigned at a character's first tag-mode portrait."></i>
+                                        title="The player, party members, combatants and lorebook NPCs get a race (and character part tags) as soon as they appear, whether or not they have a portrait, and automatic portraits are built from their race and character tags even when the Prompt builder is set to Prose. Off: races are only assigned at a character's first tag-mode portrait."></i>
                                 </label>
                                 <label class="checkbox_label">
                                     <input id="rpg_race_descriptions_in_context" type="checkbox" />

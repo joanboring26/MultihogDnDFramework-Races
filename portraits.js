@@ -644,6 +644,25 @@ export async function generateTagPortraitPrompt(entityName, npcContent) {
 }
 
 /**
+ * Prompt for automatic portraits (a character's first portrait). While races are
+ * on, these use race + character tags like "Generate from Tags", so the first
+ * portrait already shows the race; otherwise they follow the Prompt builder setting.
+ * @param {string} entityName
+ * @param {string|null} npcContent lorebook card text, or null for memo characters
+ * @returns {Promise<string>}
+ */
+export async function generateAutomaticPortraitPrompt(entityName, npcContent = null) {
+    const s = getSettings();
+    if (s.raceAutoAssign !== false) {
+        const ownsOperation = createChatCommitGuard(getActiveChatId(), getActiveChatId);
+        return chatCommitResult(ownsOperation, await generateTagPortraitPrompt(entityName, npcContent || null));
+    }
+    return npcContent
+        ? generateNpcPortraitPrompt(entityName, npcContent)
+        : generatePortraitPrompt(entityName);
+}
+
+/**
  * Gathers context and calls the LLM to generate an image prompt for a character.
  * @param {string} entityName
  * @returns {Promise<string>} The generated image prompt text
@@ -1578,7 +1597,7 @@ export async function autoGeneratePartyPortraits(refresh) {
     for (const name of toGenerate) {
         imageGenToast('info', `Generating for ${name}...`, 'RPG Tracker');
         try {
-            const prompt = chatCommitResult(ownsOperation, await generatePortraitPrompt(name));
+            const prompt = chatCommitResult(ownsOperation, await generateAutomaticPortraitPrompt(name));
             const dataUrl = chatCommitResult(ownsOperation, await generatePortraitDirect(prompt, name));
             const scaled = chatCommitResult(ownsOperation, await scaleImageTo512Square(dataUrl));
             chatCommitResult(ownsOperation, await applyPortraitData(name, scaled, { chatId: passChatId }));
@@ -1623,7 +1642,7 @@ export async function autoGenerateEnemyPortraits(refresh) {
     for (const name of toGenerate) {
         imageGenToast('info', `Generating for enemy ${name}...`, 'RPG Tracker');
         try {
-            const prompt = chatCommitResult(ownsOperation, await generatePortraitPrompt(name));
+            const prompt = chatCommitResult(ownsOperation, await generateAutomaticPortraitPrompt(name));
             const dataUrl = chatCommitResult(ownsOperation, await generatePortraitDirect(prompt, name));
             const scaled = chatCommitResult(ownsOperation, await scaleImageTo512Square(dataUrl));
             chatCommitResult(ownsOperation, await applyPortraitData(name, scaled, { chatId: passChatId }));
@@ -1775,9 +1794,7 @@ export function triggerBackgroundPortraitGeneration(name, refresh, npcContent = 
         try {
             if (!(ownsOperation() && canCommitPassForChat(passChatId, getActiveChatId()))) return;
             console.log(`[RPG Tracker] Generating prompt for "${name}" (NPC content provided: ${!!npcContent})`);
-            const prompt = npcContent
-                ? await generateNpcPortraitPrompt(name, npcContent)
-                : await generatePortraitPrompt(name);
+            const prompt = await generateAutomaticPortraitPrompt(name, npcContent);
             console.log(`[RPG Tracker] Generated prompt for "${name}":`, prompt);
             if (!(ownsOperation() && canCommitPassForChat(passChatId, getActiveChatId()))) return;
             if (!prompt) {
