@@ -190,7 +190,7 @@ describe.each(['portrait', 'location'])('%s queue affinity', kind => {
             hasPortrait: () => false, hasLocationImage: () => false,
             activeGenerations: active, activeLocationGenerations: active,
             _imageGenQueue: queue, _imageGenQueueRunning: false, enqueueImageGen: job => queue.push(job),
-            imageGenToast() {}, generatePortraitPrompt: prompt, generateNpcPortraitPrompt: prompt,
+            imageGenToast() {}, generateAutomaticPortraitPrompt: prompt,
             generateLocationImagePrompt: prompt, generatePortraitDirect: image,
             scaleImageTo512Square: async x => x, scaleImageToLandscape: async x => x,
             applyPortraitData: apply, applyLocationImageData: apply,
@@ -233,5 +233,42 @@ describe.each(['portrait', 'location'])('%s queue affinity', kind => {
         expect(h.disable).not.toHaveBeenCalled();
         expect(h.apply).not.toHaveBeenCalled();
         expect(h.active.size).toBe(0);
+    });
+});
+
+describe('automatic portrait prompt', () => {
+    function harness(settings) {
+        const tags = vi.fn().mockResolvedValue('tag prompt');
+        const prose = vi.fn().mockResolvedValue('prose prompt');
+        const npc = vi.fn().mockResolvedValue('npc prompt');
+        const context = createContext({
+            ...chatAffinity,
+            getSettings: () => settings, getActiveChatId: () => 'A',
+            generateTagPortraitPrompt: tags, generatePortraitPrompt: prose, generateNpcPortraitPrompt: npc,
+        });
+        return { tags, prose, npc, run: install(context, 'generateAutomaticPortraitPrompt') };
+    }
+    it('uses race tags for a first portrait while races are on, even in prose mode', async () => {
+        const h = harness({ portraitPromptMode: 'prose' });
+        expect(await h.run('Kaede')).toBe('tag prompt');
+        expect(h.tags).toHaveBeenCalledWith('Kaede', null);
+        expect(await h.run('Mira', 'Mira card')).toBe('tag prompt');
+        expect(h.tags).toHaveBeenLastCalledWith('Mira', 'Mira card');
+        expect(h.prose).not.toHaveBeenCalled();
+        expect(h.npc).not.toHaveBeenCalled();
+    });
+    it('follows the Prompt builder setting when races are off', async () => {
+        const h = harness({ portraitPromptMode: 'prose', raceAutoAssign: false });
+        expect(await h.run('Kaede')).toBe('prose prompt');
+        expect(await h.run('Mira', 'Mira card')).toBe('npc prompt');
+        expect(h.tags).not.toHaveBeenCalled();
+    });
+    it('is what every automatic portrait path uses', () => {
+        for (const name of ['triggerBackgroundPortraitGeneration', 'autoGeneratePartyPortraits', 'autoGenerateEnemyPortraits']) {
+            const start = source.indexOf(`function ${name}(`);
+            const body = source.slice(start, source.indexOf('\n}', start));
+            expect(body).toContain('generateAutomaticPortraitPrompt(');
+            expect(body).not.toMatch(/generate(?:Npc)?PortraitPrompt\(/);
+        }
     });
 });

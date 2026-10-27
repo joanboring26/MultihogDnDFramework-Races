@@ -10937,6 +10937,10 @@ dialog .rt-dungeon-graph-asset-tip,
     gap: 6px;
     text-align: left;
 }
+.rt-races-create .menu_button {
+    flex: 1;
+    justify-content: center;
+}
 .rt-races-list {
     display: flex;
     flex-direction: column;

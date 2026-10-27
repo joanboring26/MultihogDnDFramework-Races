@@ -376,7 +376,9 @@ async function raceEditorPopup(draft, opts = {}) {
 
 async function editRace(race = null) {
     const s = need().getSettings();
-    const result = await raceEditorPopup(race ? JSON.parse(JSON.stringify(race)) : { name: '', description: '', generalParts: [] });
+    const result = race
+        ? await raceEditorPopup(JSON.parse(JSON.stringify(race)))
+        : await raceEditorPopup({ name: '', description: '', generalParts: [] }, { okButton: 'Create race' });
     if (!result) return;
     try {
         if (race) updateRace(s, race.id, result);
@@ -486,7 +488,7 @@ export async function openRaceCreator() {
             .filter(r => filter === 'all' || (filter === 'chat' ? r.originChatId === chatId : r.createdBy === filter))
             .slice().sort((a, b) => a.name.localeCompare(b.name));
         $list.empty();
-        if (!races.length) $list.append('<small class="rt-races-empty">No races yet. Create one, or let the AI create them when portraits are generated in tag mode.</small>');
+        if (!races.length) $list.append('<small class="rt-races-empty">No races yet. Use Create race above, or let the AI create them as characters appear.</small>');
         for (const race of races) {
             const $row = $('<div class="rt-races-row"></div>');
             const $head = $('<div class="rt-races-row-header"></div>');
@@ -509,9 +511,12 @@ export async function openRaceCreator() {
     };
     $filter.on('change', render);
 
+    // Create buttons sit above the list so they are visible without scrolling past every race.
+    const $create = $('<div class="flex-container rt-races-create"></div>').append(
+        textButton('fa-plus', 'Create race').addClass('rt-races-create-race').on('click', async () => { await editRace(); render(); }),
+        textButton('fa-wand-magic-sparkles', 'Create race with AI').addClass('rt-races-create-ai').on('click', async () => { await createRaceFromPrompt(); render(); }),
+    );
     const $buttons = $('<div class="flex-container"></div>').append(
-        textButton('fa-plus', 'New race').on('click', async () => { await editRace(); render(); }),
-        textButton('fa-wand-magic-sparkles', 'Generate from prompt').on('click', async () => { await createRaceFromPrompt(); render(); }),
         textButton('fa-file-import', 'Import').on('click', async () => {
             const text = await pickJsonFile();
             if (!text) return;
@@ -527,7 +532,7 @@ export async function openRaceCreator() {
         textButton('fa-file-export', 'Export all').on('click', () => downloadJson('races.mraces.json', buildRacePack(need().getSettings()))),
         textButton('fa-puzzle-piece', 'Part Creator').on('click', async () => { await openPartCreator(); render(); }),
     );
-    $content.append($filter, $list, $buttons);
+    $content.append($create, $filter, $list, $buttons);
     render();
     await showPopup($content, { okButton: 'Close', cancelButton: false, large: true });
 }
@@ -722,7 +727,8 @@ export async function openCharacterAppearanceEditor(name, opts = {}) {
  * @param {any} settings
  */
 export function bindRaceSettingsUI(settings) {
-    const applyModeUI = () => $('#rpg_tag_prompt_group').toggle(settings.portraitPromptMode === 'tags');
+    // Tag options also apply in prose mode while races are on (automatic portraits, Generate from Tags).
+    const applyModeUI = () => $('#rpg_tag_prompt_group').toggle(settings.portraitPromptMode === 'tags' || settings.raceAutoAssign !== false);
     $('#rpg_portrait_prompt_mode').val(settings.portraitPromptMode || 'prose').off('change.rtRaces').on('change.rtRaces', function () {
         settings.portraitPromptMode = String($(this).val()) === 'tags' ? 'tags' : 'prose';
         applyModeUI();
@@ -750,6 +756,7 @@ export function bindRaceSettingsUI(settings) {
     });
     $('#rpg_race_auto_assign').prop('checked', settings.raceAutoAssign !== false).off('change.rtRaces').on('change.rtRaces', function () {
         settings.raceAutoAssign = !!$(this).prop('checked');
+        applyModeUI();
         save();
     });
     $('#rpg_race_descriptions_in_context').prop('checked', settings.raceDescriptionsInContext !== false).off('change.rtRaces').on('change.rtRaces', function () {
@@ -773,7 +780,7 @@ export function bindRaceSettingsUI(settings) {
 /** Re-sync the settings controls after a profile load or chat switch. */
 export function syncRaceSettingsUI(settings) {
     $('#rpg_portrait_prompt_mode').val(settings.portraitPromptMode || 'prose');
-    $('#rpg_tag_prompt_group').toggle(settings.portraitPromptMode === 'tags');
+    $('#rpg_tag_prompt_group').toggle(settings.portraitPromptMode === 'tags' || settings.raceAutoAssign !== false);
     $('#rpg_tag_emphasis_style').val(settings.portraitTagEmphasisStyle || 'novelai');
     $('#rpg_tag_prompt_prefix').val(settings.portraitTagPrefix ?? '');
     $('#rpg_tag_prompt_suffix').val(settings.portraitTagSuffix ?? '');

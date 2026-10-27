@@ -22,6 +22,8 @@ All notable changes to the **Multihog D&D Framework** will be documented in this
 
 ### Fixed
 - Races & Parts: Generate from prompt (and automatic race tagging) no longer comes back without tags when a real model answers in a slightly different JSON shape. Part references by `id`/`part`/`name`, `generalParts` keys, tag arrays, object maps, unknown part ids (now new parts), trailing commas and `<think>` blocks are all accepted, an empty reply is retried once, and the AI is told to keep the features and tags written in your prompt.
+- Races & Parts: a character's first (automatic) portrait now uses their race and character tags while *Give every character a race when they appear* is on, instead of only on regeneration. The tag prefix/suffix/emphasis options show in that case too.
+- Race Creator: **Create race** and **Create race with AI** buttons now sit at the top, above the race list, instead of below it.
 - ST Image Generation backend now calls `/imagine` directly instead of through the slash-command parser, so `{tag}` emphasis is no longer treated as a macro.
 
 ## [2026.9.25] - 2026-09-27
