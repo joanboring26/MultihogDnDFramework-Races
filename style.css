@@ -11048,3 +11048,32 @@ dialog .rt-dungeon-graph-asset-tip,
 .rt-races-filter {
     max-width: 260px;
 }
+
+/* ── Image preview: editable prompt ── */
+.rt-preview-prompt {
+    margin-top: 4px;
+    text-align: left;
+}
+.rt-preview-prompt summary {
+    font-size: 0.8em;
+    opacity: 0.75;
+    cursor: pointer;
+}
+.rt-preview-prompt-short {
+    opacity: 0.6;
+    margin-left: 4px;
+}
+.rt-preview-prompt[open] .rt-preview-prompt-short {
+    display: none;
+}
+.rt-preview-prompt textarea {
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+    font-size: 0.85em;
+    margin-top: 6px;
+}
+.rt-preview-prompt small {
+    display: block;
+    opacity: 0.6;
+}
