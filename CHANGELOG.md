@@ -20,6 +20,8 @@ All notable changes to the **Multihog D&D Framework** will be documented in this
   - **Race descriptions in the story**: each turn the narrator gets a `[RACES]` block with the name and description of the races of the characters in the scene (player, party, combatants, active NPC cards). Can be turned off.
   - Race and part tags, parts and part descriptions are image-only and never reach story generation.
 
+- **Edit prompt** in the generated-portrait preview (Pollinations, ST Image Generation and AI Horde): the full prompt is editable under the image, and Regenerate uses the edited prompt.
+
 ### Fixed
 - Races & Parts: Generate from prompt (and automatic race tagging) no longer comes back without tags when a real model answers in a slightly different JSON shape. Part references by `id`/`part`/`name`, `generalParts` keys, tag arrays, object maps, unknown part ids (now new parts), trailing commas and `<think>` blocks are all accepted, an empty reply is retried once, and the AI is told to keep the features and tags written in your prompt.
 - Races & Parts: a character's first (automatic) portrait now uses their race and character tags while *Give every character a race when they appear* is on, instead of only on regeneration. The tag prefix/suffix/emphasis options show in that case too.

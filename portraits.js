@@ -1136,6 +1136,30 @@ export async function ensurePollinationsKey() {
 }
 
 /**
+ * Full prompt under an image preview, editable; Regenerate uses the edited text.
+ * @param {string} id textarea id
+ * @param {string} prompt
+ */
+function previewPromptEditor(id, prompt) {
+    return `<details class="rt-preview-prompt">
+                <summary>✏️ Edit prompt <span class="rt-preview-prompt-short">${escapeHtml(prompt.substring(0, 80))}${prompt.length > 80 ? '…' : ''}</span></summary>
+                <textarea id="${id}" class="text_pole" rows="6">${escapeHtml(prompt)}</textarea>
+                <small>Edit the prompt, then press Regenerate.</small>
+            </details>`;
+}
+
+/**
+ * @param {string} id textarea id from previewPromptEditor
+ * @param {(prompt: string) => void} onEdit called with the edited prompt (ignored while empty)
+ */
+function bindPreviewPromptEditor(id, onEdit) {
+    setTimeout(() => {
+        const ta = /** @type {HTMLTextAreaElement|null} */ (document.getElementById(id));
+        if (ta) ta.addEventListener('input', () => { if (ta.value.trim()) onEdit(ta.value); });
+    }, 0);
+}
+
+/**
  * Generates an image via Pollinations.ai and shows the preview/approve popup.
  * @param {string} prompt
  * @param {string} entityName
@@ -1159,6 +1183,7 @@ export async function generateWithPollinations(prompt, entityName, localApply, r
         const imgId = `rt-poll-img-${Date.now()}`;
         const spinnerId = `rt-poll-spinner-${Date.now()}`;
         const errorId = `rt-poll-error-${Date.now()}`;
+        const promptId = `rt-poll-prompt-${Date.now()}`;
 
         // Fire generation immediately or use pre-generated/cropped URL
         const genPromise = preGeneratedUrl ? Promise.resolve(preGeneratedUrl) : generatePortraitDirect(prompt, entityName);
@@ -1187,7 +1212,7 @@ export async function generateWithPollinations(prompt, entityName, localApply, r
                 <label style="font-size:0.82em;opacity:0.8;white-space:nowrap;">Model:</label>
                 <select id="${selectId}" class="text_pole" style="flex:1;font-size:0.85em;">${modelOptions}</select>
             </div>
-            <div style="font-size:0.72em;opacity:0.45;margin-top:2px;">Prompt: ${escapeHtml(prompt.substring(0, 100))}${prompt.length > 100 ? '…' : ''}</div>
+            ${previewPromptEditor(promptId, prompt)}
         </div>`;
 
         const popupOpts = {
@@ -1203,10 +1228,11 @@ export async function generateWithPollinations(prompt, entityName, localApply, r
             if (sel) sel.addEventListener('change', () => { currentModel = sel.value; s.pollinationsModel = currentModel; saveSettings(); });
         }, 0);
 
+        bindPreviewPromptEditor(promptId, (text) => { prompt = text; });
         const result = await ctx.callGenericPopup(popupContent, ctx.POPUP_TYPE?.CONFIRM ?? 1, '', popupOpts);
 
         if (result === 3) {
-            await showPreview(); // Regenerate
+            await showPreview(); // Regenerate (with the edited prompt, if any)
         } else if (result === 4) {
             // Crop button clicked
             try {
@@ -1258,6 +1284,7 @@ export async function generateWithNativeExtension(prompt, entityName, localApply
         const imgId = `rt-native-img-${Date.now()}`;
         const spinnerId = `rt-native-spinner-${Date.now()}`;
         const errorId = `rt-native-error-${Date.now()}`;
+        const promptId = `rt-native-prompt-${Date.now()}`;
 
         // Fire generation immediately or use pre-generated/cropped URL
         const genPromise = preGeneratedUrl ? Promise.resolve(preGeneratedUrl) : generatePortraitDirect(prompt, entityName);
@@ -1282,7 +1309,7 @@ export async function generateWithNativeExtension(prompt, entityName, localApply
                 <img id="${imgId}" style="max-width:100%;max-height:400px;border-radius:8px;display:none;margin:0 auto;" />
                 <div id="${errorId}" style="display:none;color:#ff6b6b;font-size:0.9em;margin-top:10px;"></div>
             </div>
-            <div style="font-size:0.72em;opacity:0.45;margin-top:2px;">Prompt: ${escapeHtml(prompt.substring(0, 100))}${prompt.length > 100 ? '…' : ''}</div>
+            ${previewPromptEditor(promptId, prompt)}
         </div>`;
 
         const popupOpts = {
@@ -1293,10 +1320,11 @@ export async function generateWithNativeExtension(prompt, entityName, localApply
             ],
         };
 
+        bindPreviewPromptEditor(promptId, (text) => { prompt = text; });
         const result = await ctx.callGenericPopup(popupContent, ctx.POPUP_TYPE?.CONFIRM ?? 1, '', popupOpts);
 
         if (result === 3) {
-            await showPreview(); // Regenerate
+            await showPreview(); // Regenerate (with the edited prompt, if any)
         } else if (result === 4) {
             // Crop button clicked
             try {
@@ -1352,6 +1380,7 @@ export async function generateWithHorde(prompt, entityName, localApply, refresh)
         const imgId = `rt-horde-img-${Date.now()}`;
         const spinnerId = `rt-horde-spinner-${Date.now()}`;
         const errorId = `rt-horde-error-${Date.now()}`;
+        const promptId = `rt-horde-prompt-${Date.now()}`;
 
         // Fire generation immediately or use pre-generated/cropped URL
         const genPromise = preGeneratedUrl ? Promise.resolve(preGeneratedUrl) : generatePortraitDirect(prompt, entityName);
@@ -1377,7 +1406,7 @@ export async function generateWithHorde(prompt, entityName, localApply, refresh)
                 <img id="${imgId}" style="max-width:100%;max-height:400px;border-radius:8px;display:none;margin:0 auto;" />
                 <div id="${errorId}" style="display:none;color:#ff6b6b;font-size:0.9em;margin-top:10px;"></div>
             </div>
-            <div style="font-size:0.72em;opacity:0.45;margin-top:2px;">Prompt: ${escapeHtml(prompt.substring(0, 100))}${prompt.length > 100 ? '…' : ''}</div>
+            ${previewPromptEditor(promptId, prompt)}
         </div>`;
 
         const popupOpts = {
@@ -1388,10 +1417,11 @@ export async function generateWithHorde(prompt, entityName, localApply, refresh)
             ],
         };
 
+        bindPreviewPromptEditor(promptId, (text) => { prompt = text; });
         const result = await ctx.callGenericPopup(popupContent, ctx.POPUP_TYPE?.CONFIRM ?? 1, '', popupOpts);
 
         if (result === 3) {
-            await showPreview(); // Regenerate
+            await showPreview(); // Regenerate (with the edited prompt, if any)
         } else if (result === 4) {
             // Crop button clicked
             try {
